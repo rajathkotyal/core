@@ -49,7 +49,7 @@ func main() {
 	defer cancel()
 
 	// Initialise p2p instance.
-	p2pInstance, err := p2p.NewInstance(cancelCtx).Build()
+	p2pInstance, err := p2p.NewInstance(cancelCtx, config.Config.P2P).Build()
 	if err != nil {
 		logger.Fatalf("Failed to initialise p2p instance: %s", err.Error())
 	}
@@ -73,7 +73,7 @@ func main() {
 
 	// Build and start top-level instance.
 	ins := core.NewInstance().
-		SetP2pInstance(p2pInstance, config.P2pConfig).
+		SetP2pInstance(p2pInstance).
 		SetDBInstance(dbInstance).
 		SetBFTInstance(bftInstance)
 	ins.Start()
