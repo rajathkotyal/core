@@ -143,7 +143,8 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 				log.Info("Submitting requests to validator.")
 
 				// This will block:
-				app.col.SubmitRequests(validatorPriorities[i])
+				summaries := app.col.SubmitRequests(validatorPriorities[i])
+				log.Info(summaries)
 				break
 			}
 		}
