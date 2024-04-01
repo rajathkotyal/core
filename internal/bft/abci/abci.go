@@ -13,7 +13,7 @@ import (
 
 	// "math/rand"
 	"github.com/openmesh-network/core/internal/bft/types"
-	"github.com/openmesh-network/core/internal/collector"
+	"github.com/openmesh-network/core/collector"
 	log "github.com/openmesh-network/core/internal/logger"
 )
 

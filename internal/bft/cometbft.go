@@ -13,7 +13,7 @@ import (
 	"github.com/cometbft/cometbft/proxy"
 	"github.com/dgraph-io/badger/v3"
 	abci "github.com/openmesh-network/core/internal/bft/abci"
-	"github.com/openmesh-network/core/internal/collector"
+	"github.com/openmesh-network/core/collector"
 	"github.com/openmesh-network/core/internal/config"
 	log "github.com/openmesh-network/core/internal/logger"
 	"github.com/spf13/viper"
