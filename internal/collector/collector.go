@@ -27,15 +27,12 @@ type CollectorWorker struct {
 	request Request
 	message chan []byte
 
-	// Could make these into the same functoin.
+	// Could make these into the same function.
 	pause  chan bool
 	resume chan bool
 }
 
-const CONNECTIONS_MAX = 1
-
 type CollectorInstance struct {
-	// Lower in the queue is higher priority
 	ctx                       context.Context
 	workers                   [CONNECTIONS_MAX]CollectorWorker
 	workerWaitGroup           conc.WaitGroup
@@ -46,6 +43,8 @@ type CollectorInstance struct {
 	subscriptionsContext      context.Context
 	subscriptionsCancel       context.CancelFunc
 }
+
+const CONNECTIONS_MAX = 1
 
 // const BUFFER_SIZE_MAX = 1024
 // const BUFFER_MAX = 1024
@@ -69,7 +68,7 @@ func (ci *CollectorInstance) SubmitRequests(requestsSortedByPriority []Request) 
 	log.Info("Pausing workers")
 	for i := range ci.workers {
 		log.Info("Pausing worker ", i)
-		// This should flush the summary buffer
+		// This tells worker to flush the messages buffer and stop reading the summary pointer.
 		ci.workers[i].pause <- true
 	}
 
@@ -87,6 +86,8 @@ func (ci *CollectorInstance) SubmitRequests(requestsSortedByPriority []Request) 
 		messageChannel, err := Subscribe(ci.subscriptionsContext, r.Source, r.Source.Topics[r.Topic])
 		if err != nil {
 			// XXX: Handle this case by skipping this request.
+			// Panicking now to highlight this.
+			panic(err)
 		}
 
 		ci.workers[i].summary.Request = r
@@ -99,11 +100,8 @@ func (ci *CollectorInstance) SubmitRequests(requestsSortedByPriority []Request) 
 		ci.workers[i].resume <- true
 	}
 
-	// Go through new requests, ideal becaviour:
-	//	- If a worker is already subscribed then skip. (Not doing this to begin with to keep it simple)
-	//	- Otherwise subscribe to the new request and flip.
-
-	return ci.summariesOld[:min(len(ci.summariesOld), len(requestsSortedByPriority))]
+	maxSummaries := min(len(ci.summariesOld), len(requestsSortedByPriority))
+	return ci.summariesOld[:maxSummaries]
 }
 
 func (cw *CollectorWorker) run(ctx context.Context, buffer []byte) {
@@ -117,6 +115,7 @@ func (cw *CollectorWorker) run(ctx context.Context, buffer []byte) {
 	}
 
 	// XXX: Maybe implement this function in RP? Also it will crash if length == 0
+	// Also I could move this to another function.
 	summaryAppend := func(summary *Summary, buffer []byte, length int) {
 		// TODO: Consider adding:
 		//	- Timestamp.
@@ -174,25 +173,15 @@ func (cw *CollectorWorker) run(ctx context.Context, buffer []byte) {
 				paused = true
 				break
 			case message := <-cw.message:
+				// XXX: This looks ugly, whatever.
 				if len(message) == 0 {
 					if !printedDebug {
 						log.Info("Got message with length 0, that means we probs disconnected :(")
-						// log.Info("Last message was: ", string(prevMessage))
 					}
 					printedDebug = true
 					break
-				} else {
-					// log.Info("Got message: ", len(message))
-					// prevMessage = message
-					// if len(message) > 100 {
-					// 	log.Info(string(message[:100]))
-					// }
 				}
 
-				// Got a message, add it to buffer.
-
-				// log.Info("Went through this part here.")
-				// We do a for loop here because the message itself might be bigger than the total size of the buffer.
 				if bufferOffset+len(message) > len(buffer) {
 
 					// TODO: Add to Resource Pool at this stage?
@@ -200,12 +189,11 @@ func (cw *CollectorWorker) run(ctx context.Context, buffer []byte) {
 					bufferOffset = 0
 				}
 
-				// log.Info("Went through this part.")
 				// If the message still doesn't fit, divide it into chunks and add it until it fits.
 				for len(message) > len(buffer) {
 					// XXX: Should the cids we post be capped at the length of the buffer?
 					// Or can they be any size? For now I assume they are capped at the size of the buffer.
-					// Do we do padding? Need a spreadsheet to test this.
+					// Do we do padding? Need a spreadsheet to "empirically" test this.
 					summaryAppend(cw.summary, message, len(buffer))
 					message = message[len(buffer):]
 				}
@@ -235,84 +223,6 @@ func (ci *CollectorInstance) Start(ctx context.Context) {
 		log.Infof("Deploying worker for collector.")
 		ci.workerWaitGroup.Go(runFunc)
 	}
-
-	/* go func() {
-		// XXX: Might have to remake the waitgroup on every iteration.
-		var wg conc.WaitGroup
-
-		subscriptionsCtx, subscriptionsCancel := context.WithCancel(ctx)
-		defer subscriptionsCancel()
-
-		subscriptionStopChannels := make([]chan struct{}, CONNECTIONS_MAX)
-		for i := range subscriptionStopChannels {
-			subscriptionStopChannels[i] = make(chan struct{})
-		}
-		subscriptionCount := 0
-
-		for {
-			log.Infof("Polling..")
-			select {
-			case <-collectorInstance.requestNotifyChannel:
-				log.Info("Got new notification...")
-				// Wait for a request to be submitted.
-				// Once they are submitted, we act on it by launching a collector.
-				if collectorInstance.requestsByPriorityNew != nil {
-					// Stop all subscriptions running currently.
-
-					log.Info("Stopping ", subscriptionCount, " subscriptions...")
-
-					// We have to wait for as long as we have subscriptions.
-					for i := 0; i < subscriptionCount; i++ {
-						log.Info("Sending message to channel")
-						subscriptionStopChannels[i] <- struct{}{}
-						log.Info("Canceled subscription")
-					}
-					subscriptionCount = 0
-					log.Info("Waiting now.")
-					wg.Wait()
-
-					log.Info("Stopped subscriptions!")
-
-					// Window to fetch the requests.
-					{
-						// Do I send them as transactions?
-						// Do I wait for someone to request them?
-					}
-				}
-
-				// Go through all the available connections and launch a new subscription goroutine for each of them.
-				log.Info("Adding sources...")
-				iterations := min(CONNECTIONS_MAX,
-					len(collectorInstance.requestsByPriorityNew),
-					len(collectorInstance.summariesLatest))
-
-				for i := 0; i < iterations; i++ {
-					log.Info(len(collectorInstance.requestsByPriorityNew), len(collectorInstance.summariesLatest), len(subscriptionStopChannels), i)
-					req := collectorInstance.requestsByPriorityNew[i]
-					buffer := make([]byte, 1024*4)
-
-					stopChannel := subscriptionStopChannels[i]
-					summaryPtr := &collectorInstance.summariesLatest[i]
-
-					runSubscriptionFunc := func() {
-						runSubscription(subscriptionsCtx, req, buffer, summaryPtr, stopChannel)
-					}
-
-					wg.Go(runSubscriptionFunc)
-					// go runSubscriptionFunc()
-					subscriptionCount++
-				}
-
-				// Move new to current.
-				copy(collectorInstance.requestsByPriorityCurrent, collectorInstance.requestsByPriorityNew)
-				collectorInstance.requestsByPriorityNew = nil
-
-			case <-ctx.Done():
-				wg.Wait()
-				return
-			}
-		}
-	}() */
 }
 
 func (ci *CollectorInstance) Stop() {
