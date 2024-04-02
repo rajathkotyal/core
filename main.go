@@ -13,7 +13,7 @@ import (
 	"github.com/openmesh-network/core/internal/core"
 	"github.com/openmesh-network/core/internal/database"
 	"github.com/openmesh-network/core/internal/logger"
-	"github.com/openmesh-network/core/internal/networking/p2p"
+	"github.com/openmesh-network/core/networking/p2p"
 	"github.com/openmesh-network/core/updater"
 	"net/http"
 	_ "net/http/pprof"
@@ -54,7 +54,7 @@ func main() {
 	defer cancel()
 
 	// Initialise p2p instance.
-	p2pInstance, err := p2p.NewInstance(cancelCtx).Build()
+	p2pInstance, err := p2p.NewInstance(cancelCtx, config.Config.P2P).Build()
 	if err != nil {
 		logger.Fatalf("Failed to initialise p2p instance: %s", err.Error())
 	}
@@ -62,7 +62,7 @@ func main() {
 	// Initialise BadgerDB connection
 	dbInstance, err := database.NewInstance()
 	if err != nil {
-		logger.Fatalf("Failed to establish PostgreSQL connection: %s", err.Error())
+		logger.Fatalf("Failed to establish BadgerDB connection: %s", err.Error())
 	}
 
 	// Need collector before bft.

@@ -1,6 +1,9 @@
 # Openmesh Core
 
-This is the repository of Openmesh Core.
+This is the repository of Openmesh Core which can operate as standalone software or as apart of an Xnode.
+
+## What is Openmesh Core?
+Openmesh core is node software for interacting with the openmesh network to collect, seed and fetch data chosen by the Openmesh DAO. The core operates within an Intel SGX trusted execution environment, which it uses to prove to other nodes that it is running the same software.
 
 ## Usage
 
@@ -24,6 +27,8 @@ Build and run:
 go build -o openmesh-core
 ./openmesh-core -config <path-to-config>/config.yml
 ```
+## System Requirements
+Further testing is required to determine the specs needed to run this software. TO-DO
 
 ## Project Configuration
 
@@ -44,3 +49,10 @@ go build -o openmesh-core
       - `p2p/`: P2P networking implementations (based on `libp2p`).
   - `main.go`: The main function.
   - Potential exported (public) libraries.
+
+## Openmesh Core Architecture
+The openmesh core currently consists of the following software stack: 
+
+1. CometBFT engine for consensus
+2. BadgerDB for storage 
+3. LibP2P for networking
