@@ -1,6 +1,8 @@
 package database
 
 import (
+	"fmt"
+
 	"github.com/dgraph-io/badger/v3"
 	"github.com/openmesh-network/core/internal/logger"
 )
@@ -20,3 +22,27 @@ func NewInstance() (*Instance, error) {
 	}
 	return i, nil
 }
+
+// Storage a chunk of messages from a CID in a SQL DB as key: CID and value: message bytes (BSON?).
+func (datastore *Instance) storeMessageChunk(cid string, chunk []byte) {
+
+	// Needs to be changed
+	fmt.Printf("Storing chunk of messages with CID: %s\n", cid)
+	dbTransaction := datastore.Conn.NewTransaction(true)
+	dbTransaction.Set([]byte("cid"), chunk) // store bytes of CID alongside the associated chunk of messages.
+
+	err := datastore.Conn.Update(func(txn *badger.Txn) error {
+		// Your code here…
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+
+}
+
+/*
+func updateMessageChunk(txt *badger.Txn) error {
+	return error.Error("No")
+}
+*/
