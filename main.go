@@ -57,11 +57,10 @@ func main() {
 	// Initialise BadgerDB connection
 	dbInstance, err := database.NewInstance()
 	if err != nil {
-		logger.Fatalf("Failed to establish PostgreSQL connection: %s", err.Error())
+		logger.Fatalf("Failed to establish BadgerDB connection: %s", err.Error())
 	}
 
 	// Initialise CometBFT instance
-
 	bftInstance, err := bft.NewInstance(dbInstance.Conn)
 	if err != nil {
 		logger.Fatalf("Failed to initialise CometBFT instance: %s", err.Error())

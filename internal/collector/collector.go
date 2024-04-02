@@ -9,11 +9,13 @@ import (
 	"github.com/sourcegraph/conc"
 )
 
+// Request is a data point as chosen by Openmesh DAO to be handled and stored in nodes.
 type Request struct {
 	Source Source
 	Topic  int
 }
 
+// Summary is an array of CIDs associated to a Request for each data point, this array is apart of a larger stream of messages from the associated data source.
 type Summary struct {
 	Request Request
 	// XXX: This might not be efficient, array of pointers means many cache misses.
