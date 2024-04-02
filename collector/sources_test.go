@@ -14,11 +14,11 @@ func TestSourcesTableSanity(t *testing.T) {
 	// A better way to implement this would be to make sure we receive a few messages or get some minimum amount of bytes transfered.
 	var wg sync.WaitGroup
 	checkSymbols := func(source Source) {
-		for i := range source.Symbols {
-			t.Log("Checking:", source.Name, source.Symbols[i])
+		for i := range source.Topics {
+			t.Log("Checking:", source.Name, source.Topics[i])
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 			defer cancel()
-			_, err := source.JoinFunc(ctx, source, source.Symbols[i])
+			_, err := source.JoinFunc(ctx, source, source.Topics[i])
 
 			if err != nil {
 				t.Error(err)
@@ -43,8 +43,8 @@ func TestBinanceJoin(t *testing.T) {
 	defer cancel()
 
 	t.Log("Got here no issue")
-	t.Log(Sources[2].Symbols[0])
-	c, err := defaultJoinCEX(ctx, Sources[2], Sources[2].Symbols[0])
+	t.Log(Sources[2].Topics[0])
+	c, err := defaultJoinCEX(ctx, Sources[2], Sources[2].Topics[0])
 
 	if err != nil {
 		t.Error(err)
@@ -63,8 +63,8 @@ func TestAnkrJoin(t *testing.T) {
 	defer cancel()
 
 	t.Log("Got here no issue")
-	t.Log(Sources[3].Symbols[0])
-	c, err := ankrJoinRPC(ctx, Sources[3], Sources[3].Symbols[0])
+	t.Log(Sources[3].Topics[0])
+	c, err := ankrJoinRPC(ctx, Sources[3], Sources[3].Topics[0])
 
 	if err != nil {
 		t.Error(err)

@@ -7,14 +7,16 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/openmesh-network/core/internal/bft"
 	"github.com/openmesh-network/core/collector"
+	"github.com/openmesh-network/core/internal/bft"
 	"github.com/openmesh-network/core/internal/config"
 	"github.com/openmesh-network/core/internal/core"
 	"github.com/openmesh-network/core/internal/database"
 	"github.com/openmesh-network/core/internal/logger"
 	"github.com/openmesh-network/core/internal/networking/p2p"
 	"github.com/openmesh-network/core/updater"
+	"net/http"
+	_ "net/http/pprof"
 )
 
 const (
@@ -36,6 +38,8 @@ var (
 )
 
 func main() {
+	go http.ListenAndServe("localhost:8080", nil)
+
 	if allowLoadConfigAtRuntime {
 		config.ParseFlags()
 	}

@@ -54,13 +54,16 @@ func Subscribe(ctx context.Context, source Source, symbol string) (chan []byte, 
 	go func() {
 		for {
 			select {
-			case msg := <-msgChannel:
+			case msg, ok := <-msgChannel:
 				// TODO: Add optional callback to re-encode the data for better size efficiency here.
+				if !ok {
+					return
+				}
 
 				outChannel <- msg
 				break
 			case <-ctx.Done():
-				break
+				return
 			}
 		}
 	}()
@@ -132,17 +135,15 @@ func ankrJoinRPC(ctx context.Context, source Source, symbol string) (chan []byte
 			case <-ctx.Done():
 				// Quit gracefully, out context was handled above.
 			case <-timeTicker:
-				// XXX: This might add 2 seconds to shutdown. It's unfortunate, but it guarantees error checks below
-				// actually error on the state of the request, not the parent's context.
-				ctxToPreventHanging, cancel := context.WithTimeout(context.Background(), time.Second*2)
+				ctxToPreventHanging, cancel := context.WithTimeout(ctx, time.Second*2)
 				defer cancel()
 				fmt.Println("Waiting for block...")
 				block, err := ethereum_client.BlockByNumber(ctxToPreventHanging, nil)
 				fmt.Println("Got block!")
 
 				if err != nil {
-					// HACK: Lazy error handling, find better strategy later.
-					panic(err)
+					// XXX: Should handle this in a better way
+					return
 				} else {
 					headerProspective := block.Header().Hash()
 					if headerPrevious == headerProspective {

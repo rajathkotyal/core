@@ -12,8 +12,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	// "math/rand"
-	"github.com/openmesh-network/core/internal/bft/types"
 	"github.com/openmesh-network/core/collector"
+	"github.com/openmesh-network/core/internal/bft/types"
 	log "github.com/openmesh-network/core/internal/logger"
 )
 
@@ -130,6 +130,8 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 			}
 		}
 
+		// Decouple this from abci?
+
 		log.Info("Done sorting preferences, submitting our own requests to validator.")
 		for i := range validatorPriorities {
 			validator := req.DecidedLastCommit.Votes[i].GetValidator()
@@ -144,7 +146,10 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 
 				// This will block:
 				summaries := app.col.SubmitRequests(validatorPriorities[i])
-				log.Info(summaries)
+				log.Info("Summaries:", len(summaries))
+
+				// Send summaries as transaction???
+
 				break
 			}
 		}
