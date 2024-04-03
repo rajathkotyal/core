@@ -217,7 +217,7 @@ func ankrJoinRPC(ctx context.Context, source Source, topic string) (chan []byte,
 				fmt.Println("Waiting for block...")
 				block, err := ethereum_client.BlockByNumber(ctxToPreventHanging, nil)
 				bnumber := block.Number()
-				fmt.Println(fmt.Sprintf("Got block %s!", bnumber))
+				fmt.Printf("Got block %s!\n", bnumber)
 
 				if err != nil {
 					errChannel <- err
