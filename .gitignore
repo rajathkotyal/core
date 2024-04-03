@@ -34,7 +34,7 @@ go.work
 executable-file
 
 /ignore
-/internal/collector/.env
+/collector/.env
 log.txt
 
 # Default cometbft state (config.toml is important)
