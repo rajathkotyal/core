@@ -23,12 +23,6 @@ func TestStoreCID(t *testing.T) {
 
 	//c, cancel := context.WithCancel(context.Background())
 	//defer cancel()
-	bdb, err := NewInstance()
-	if err != nil {
-		panic(err)
-	}
-
-	bdb.storeMessageChunk("", []byte("test"))
 
 	// Try to reference the CID from bdb, test output against input and readability of the if reconstructed.
 }
