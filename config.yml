@@ -6,7 +6,7 @@ p2p:
   groupName: xnode
   peerLimit: 50
 bft:
-  homeDir: /tmp/cometbft-home
+  homeDir: ./default-cometbft-home
 db:
   username: username
   password: password

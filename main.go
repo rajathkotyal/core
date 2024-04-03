@@ -61,7 +61,6 @@ func main() {
 	}
 
 	// Initialise CometBFT instance
-
 	bftInstance, err := bft.NewInstance(dbInstance.Conn)
 	if err != nil {
 		logger.Fatalf("Failed to initialise CometBFT instance: %s", err.Error())
