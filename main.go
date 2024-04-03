@@ -84,7 +84,7 @@ func main() {
 		SetP2pInstance(p2pInstance).
 		SetDBInstance(dbInstance).
 		SetBFTInstance(bftInstance)
-	ins.Start()
+	ins.Start(cancelCtx)
 	logger.Infof("Openmesh Core started successfully.")
 	defer ins.Stop()
 

@@ -61,7 +61,6 @@ func Subscribe(ctx context.Context, source Source, symbol string) (chan []byte, 
 				}
 
 				outChannel <- msg
-				break
 			case <-ctx.Done():
 				return
 			}

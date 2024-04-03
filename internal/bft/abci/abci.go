@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"math/rand"
+	"time"
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	"github.com/dgraph-io/badger/v3"
@@ -18,16 +19,21 @@ import (
 )
 
 type VerificationApp struct {
-	db           *badger.DB
-	onGoingBlock *badger.Txn
-	col          *collector.CollectorInstance
-	publicKey    []byte
+	db               *badger.DB
+	onGoingBlock     *badger.Txn
+	publicKey        []byte
+	assignedRequests []collector.Request
 }
 
 var _ abcitypes.Application = (*VerificationApp)(nil)
 
+func (app *VerificationApp) GetRequestsDue() []collector.Request {
+	return app.assignedRequests
+}
+
 func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.RequestFinalizeBlock) (*abcitypes.ResponseFinalizeBlock, error) {
 	var txs = make([]*abcitypes.ExecTxResult, len(req.Txs))
+	log.Debug("Finalizing block ", time.Now().Unix())
 
 	app.onGoingBlock = app.db.NewTransaction(true)
 	for i, tx := range req.Txs {
@@ -35,6 +41,9 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 			log.Warn("Error: invalid transaction index %v", i)
 			txs[i] = &abcitypes.ExecTxResult{Code: code}
 		} else {
+
+			// This is just one type of transaction.
+
 			parts := bytes.SplitN(tx, []byte("="), 2)
 			key, value := parts[0], parts[1]
 			log.Info("Adding key %s with value %s", key, value)
@@ -107,7 +116,6 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 							alreadyAssigned := false
 							for _, req := range validatorPriorities[k] {
 								if req.Source.Name == collector.Sources[i].Name && req.Topic == j {
-									// Can't use this guy
 									alreadyAssigned = true
 								}
 							}
@@ -130,9 +138,10 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 			}
 		}
 
+		// Need to have this info available somewhere...
 		// Decouple this from abci?
 
-		log.Info("Done sorting preferences, submitting our own requests to validator.")
+		log.Info("Done sorting preferences, writting our requests.")
 		for i := range validatorPriorities {
 			validator := req.DecidedLastCommit.Votes[i].GetValidator()
 
@@ -144,24 +153,14 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 				// Submits requests to get the blocks.
 				log.Info("Submitting requests to validator.")
 
+				app.assignedRequests = validatorPriorities[i]
 				// This will block:
-				summaries := app.col.SubmitRequests(validatorPriorities[i])
-				log.Info("Summaries:", len(summaries))
 
-				// Send summaries as transaction???
+				// summaries := app.col.SubmitRequests(validatorPriorities[i])
 
 				break
 			}
 		}
-
-		/*
-			if summary != nil {
-				Turn the summary to unified format and send as a transaction
-			}
-
-			Next, I need to go above, sort the transactions by rank, and log them on the blockchain.
-
-		*/
 	}
 
 	return &abcitypes.ResponseFinalizeBlock{
@@ -298,8 +297,8 @@ func (app *VerificationApp) CheckTx(_ context.Context, check *abcitypes.RequestC
 	return &abcitypes.ResponseCheckTx{Code: code}, nil
 }
 
-func NewVerificationApp(publicKey []byte, db *badger.DB, collector *collector.CollectorInstance) *VerificationApp {
-	return &VerificationApp{publicKey: publicKey, db: db, col: collector}
+func NewVerificationApp(publicKey []byte, db *badger.DB) *VerificationApp {
+	return &VerificationApp{publicKey: publicKey, db: db}
 }
 
 func (app *VerificationApp) InitChain(_ context.Context, chain *abcitypes.RequestInitChain) (*abcitypes.ResponseInitChain, error) {
