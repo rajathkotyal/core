@@ -43,7 +43,7 @@ type CollectorInstance struct {
 	subscriptionsCancel       context.CancelFunc
 }
 
-const WORKER_COUNT = 10
+const WORKER_COUNT = 1
 
 // const BUFFER_SIZE_MAX = 1024
 // const BUFFER_MAX = 1024
@@ -86,7 +86,7 @@ func (ci *CollectorInstance) SubmitRequests(requestsSortedByPriority []Request) 
 
 	log.Info("Subscribing to requests.")
 
-	// NOTE: I only multithread this bit because its the slowest, all the other sections of this run pretty quickly 
+	// NOTE: I only multithread this bit because its the slowest, all the other sections of this run pretty quickly
 	// so there's no reason to multithread them.
 	subscribeWaitGroup := conc.NewWaitGroup()
 	for i := 0; i < min(len(ci.workers), len(requestsSortedByPriority)); i++ {

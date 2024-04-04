@@ -132,8 +132,6 @@ func (inst *Instance) Start(ctx context.Context) {
 					log.Debug("No requests this block :(")
 				}
 
-				// pushTransactionWaitGroup := conc.NewWaitGroup()
-
 				for i := range summaries {
 					log.Debug("Went through: ", i, " summaries. ", summaries[i])
 					s := summaries[i]
@@ -149,7 +147,6 @@ func (inst *Instance) Start(ctx context.Context) {
 							Type:      *otypes.TransactionType_VerificationTransaction.Enum(),
 						}
 
-						// I LOVE PROTOBUF!!
 						transactionMessage.Data = &otypes.Transaction_VerificationData{
 							VerificationData: &otypes.VerificationTransactionData{
 								// XXX: Actually provide attestation here.
@@ -177,23 +174,16 @@ func (inst *Instance) Start(ctx context.Context) {
 						}
 
 						log.Debug("Pushing transaction with hash: ", sha256.Sum256(transactionBytes))
-						// These transactions take forever!!!
-						// pushTransactions := func() {
 						_, err = env.BroadcastTxAsync(&rpctypes.Context{}, transaction)
 
 						if err != nil {
 							panic(err)
 						}
 						log.Debug("Succesfully pushed transaction!")
-						// }
-
-						// pushTransactionWaitGroup.Go(pushTransactions)
 
 						log.Debug("Got summary: ", s)
 					}
 				}
-
-				// pushTransactionWaitGroup.Wait()
 			}
 		}
 	}()

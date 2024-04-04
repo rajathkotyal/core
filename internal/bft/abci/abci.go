@@ -31,6 +31,8 @@ func (app *VerificationApp) GetRequestsDue() []collector.Request {
 	return app.assignedRequests
 }
 
+var testval = 0
+
 func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.RequestFinalizeBlock) (*abcitypes.ResponseFinalizeBlock, error) {
 	var txs = make([]*abcitypes.ExecTxResult, len(req.Txs))
 	log.Debug("Finalizing block ", time.Now().Unix())
@@ -56,7 +58,20 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 			// Accept all transactions that are valid! But don't store them lmao
 
 			txs[i] = &abcitypes.ExecTxResult{}
+			// if testval%2 == 0 {
+			// 	log.Error("THIS RAN")
+			// 	txs[i] = &abcitypes.ExecTxResult{Code: code}
+			// }
+
+			testval++
 		}
+
+		// Need a different mechanism for the transactions that bring verification data.
+		// Roughly:
+		//	- Make sure the transaction itself is solid.
+		//	- Sort by source then by rank.
+		//	- Highest ranked transactions are marked for storage, the rest are discarded.
+		//	- .
 	}
 
 	{
@@ -151,14 +166,9 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 			log.Info(validator.Address, addr)
 
 			if bytes.Equal(validator.Address, addr) {
-				// Submits requests to get the blocks.
-				log.Info("Submitting requests to collector.")
+				log.Info("Found priorities for node.")
 
 				app.assignedRequests = validatorPriorities[i]
-				// This will block:
-
-				// summaries := app.col.SubmitRequests(validatorPriorities[i])
-
 				break
 			}
 		}
