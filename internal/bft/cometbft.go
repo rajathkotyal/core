@@ -2,8 +2,10 @@ package bft
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	cfg "github.com/cometbft/cometbft/config"
@@ -102,8 +104,8 @@ func NewInstance(db *badger.DB, collector *collector.CollectorInstance) (*Instan
 }
 
 // Start the CometBFT node
-func (i *Instance) Start(ctx context.Context) {
-	eventBus := i.BftNode.EventBus()
+func (inst *Instance) Start(ctx context.Context) {
+	eventBus := inst.BftNode.EventBus()
 
 	newBlock, err := eventBus.Subscribe(ctx, "mainId", types.EventQueryNewBlock)
 	if err != nil {
@@ -121,64 +123,84 @@ func (i *Instance) Start(ctx context.Context) {
 				eventBus.UnsubscribeAll(ctx, "mainId")
 				return
 			case <-newBlock.Out():
-				requests := i.app.GetRequestsDue()
+				requests := inst.app.GetRequestsDue()
 
 				var summaries []collector.Summary
 				if requests != nil {
-					summaries = i.collector.SubmitRequests(requests)
+					summaries = inst.collector.SubmitRequests(requests)
 				} else {
 					log.Debug("No requests this block :(")
 				}
 
-				for _, s := range summaries {
-					log.Debug("New block, submitting requests...", time.Now().Unix())
+				// pushTransactionWaitGroup := conc.NewWaitGroup()
+
+				for i := range summaries {
+					log.Debug("Went through: ", i, " summaries. ", summaries[i])
+					s := summaries[i]
+					r := requests[i]
 
 					if len(s.DataHashes) < 1 {
 						log.Debug("No hash for this source :(")
-						continue
+					} else {
+						// Format as a transactionMessage
+						transactionMessage := otypes.Transaction{
+							Owner:     "John Doe",
+							Signature: strconv.Itoa(i),
+							Type:      *otypes.TransactionType_VerificationTransaction.Enum(),
+						}
+
+						// I LOVE PROTOBUF!!
+						transactionMessage.Data = &otypes.Transaction_VerificationData{
+							VerificationData: &otypes.VerificationTransactionData{
+								// XXX: Actually provide attestation here.
+								Attestation: "",
+								// XXX: Need to decide how we're building the cids.
+								// There's a tradeoff between blockchain size and download speed.
+								Cid:        s.DataHashes[0].String(),
+								Datasource: r.Source.Name + "-" + r.Source.Topics[r.Topic],
+								// XXX: Should this be the time it started being recorded or ended?
+								Timestamp: time.Now().Unix(),
+							},
+						}
+
+						transactionBytes, err := proto.Marshal(&transactionMessage)
+						if err != nil {
+							panic(err)
+						}
+
+						transaction := types.Tx(transactionBytes[:])
+
+						env, err := inst.BftNode.ConfigureRPC()
+
+						if err != nil {
+							panic(err)
+						}
+
+						log.Debug("Pushing transaction with hash: ", sha256.Sum256(transactionBytes))
+						// These transactions take forever!!!
+						// pushTransactions := func() {
+						_, err = env.BroadcastTxAsync(&rpctypes.Context{}, transaction)
+
+						if err != nil {
+							panic(err)
+						}
+						log.Debug("Succesfully pushed transaction!")
+						// }
+
+						// pushTransactionWaitGroup.Go(pushTransactions)
+
+						log.Debug("Got summary: ", s)
 					}
-
-					// Format as a transactionMessage
-					transactionMessage := otypes.VerificationTransactionData{
-						// XXX: Actually provide attestation here.
-						Attestation: "",
-						// XXX: Need to decide how we're building the cids.
-						// There's a tradeoff between blockchain size and download speed.
-						Cid:        s.DataHashes[0].String(),
-						Datasource: s.Request.Source.Name,
-						// XXX: Should this be the time it started being recorded or ended?
-						Timestamp: time.Now().Unix(),
-					}
-
-					transactionBytes, err := proto.Marshal(&transactionMessage)
-					if err != nil {
-						panic(err)
-					}
-
-					transaction := types.Tx(transactionBytes[:])
-
-					env, err := i.BftNode.ConfigureRPC()
-
-					if err != nil {
-						panic(err)
-					}
-
-					_, err = env.BroadcastTxCommit(&rpctypes.Context{}, transaction)
-					if err != nil {
-						panic(err)
-					}
-
-					log.Debug("Succesfully pushed transaction!")
-
-					log.Debug("Got summary: ", s)
 				}
+
+				// pushTransactionWaitGroup.Wait()
 			}
 		}
 	}()
 
 	go func() {
 		// This blocks:
-		if err := i.BftNode.Start(); err != nil {
+		if err := inst.BftNode.Start(); err != nil {
 			log.Fatalf("Failed to start CometBFT node: %s", err.Error())
 		}
 	}()

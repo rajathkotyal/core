@@ -85,7 +85,7 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 		log.Info("Started source selection.")
 
 		for round := 0; round < roundAmount && len(validatorPriorities) > 0; round++ {
-			log.Info("Round:", round)
+			// log.Info("Round:", round)
 			for i := range validatorFreeThisRound {
 				validatorFreeThisRound[i] = true
 			}
@@ -130,7 +130,7 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 								}
 								validatorPriorities[k] = append(validatorPriorities[k], req)
 
-								log.Info("Found validator for source.")
+								// log.Info("Found validator for source.")
 								break
 							}
 						}
@@ -152,7 +152,7 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 
 			if bytes.Equal(validator.Address, addr) {
 				// Submits requests to get the blocks.
-				log.Info("Submitting requests to validator.")
+				log.Info("Submitting requests to collector.")
 
 				app.assignedRequests = validatorPriorities[i]
 				// This will block:

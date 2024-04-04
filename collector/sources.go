@@ -30,8 +30,8 @@ type Source struct {
 var Sources = [...]Source{
 	// Exchanges:
 	// Note that the symbols are incomplete as they are undecided.
-	{"binance", defaultJoinCEX, "wss://stream.binance.com:9443/ws", []string{"btc.usdt", "eth.usdt", "sol.usdt", "xrp.usdt"}, "{\"method\": \"SUBSCRIBE\", \"params\": [ \"{{symbol}}@aggTrade\" ], \"id\": 1}"},
 	{"coinbase", defaultJoinCEX, "wss://ws-feed.pro.coinbase.com", []string{"BTC-USD", "ETH-USD", "BT-ETH"}, "{\"type\": \"subscribe\", \"product_ids\": [ \"{{symbol}}\" ], \"channels\": [ \"ticker\" ]}"},
+	{"binance", defaultJoinCEX, "wss://stream.binance.com:9443/ws", []string{"btc.usdt", "eth.usdt", "sol.usdt", "xrp.usdt"}, "{\"method\": \"SUBSCRIBE\", \"params\": [ \"{{symbol}}@aggTrade\" ], \"id\": 1}"},
 	{"dydx", defaultJoinCEX, "wss://api.dydx.exchange/v3/ws", []string{"MATIC-USD", "LINK-USD", "SOL-USD", "ETH-USD", "BTC-USD"}, "{\"type\": \"subscribe\", \"id\": \"{{symbol}}\", \"channel\": \"v3_trades\"}"},
 
 	// Blockchain RPCs:
