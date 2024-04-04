@@ -41,18 +41,19 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 			log.Warn("Error: invalid transaction index %v", i)
 			txs[i] = &abcitypes.ExecTxResult{Code: code}
 		} else {
-
 			// This is just one type of transaction.
 
-			parts := bytes.SplitN(tx, []byte("="), 2)
-			key, value := parts[0], parts[1]
-			log.Info("Adding key %s with value %s", key, value)
+			// parts := bytes.SplitN(tx, []byte("="), 2)
+			// key, value := parts[0], parts[1]
+			// log.Info("Adding key %s with value %s", key, value)
 
-			if err := app.onGoingBlock.Set(key, value); err != nil {
-				log.Panicf("Error writing to database, unable to execute tx: %v", err)
-			}
+			// if err := app.onGoingBlock.Set(key, value); err != nil {
+			// 	log.Panicf("Error writing to database, unable to execute tx: %v", err)
+			// }
 
-			log.Info("Successfully added key %s with value %s", key, value)
+			// log.Info("Successfully added key %s with value %s", key, value)
+
+			// Accept all transactions that are valid! But don't store them lmao
 
 			txs[i] = &abcitypes.ExecTxResult{}
 		}
@@ -193,60 +194,6 @@ func (app *VerificationApp) Query(_ context.Context, req *abcitypes.RequestQuery
 	return &resp, nil
 }
 
-func (app *VerificationApp) ExecuteTransaction(tx []byte) uint32 {
-	var transaction types.Transaction
-	err := proto.Unmarshal(tx, &transaction)
-	if err != nil {
-		fmt.Println("Error unmarshaling transaction data:", err)
-		return 1
-	}
-
-	switch transaction.Type {
-	case types.TransactionType_NormalTransaction:
-		normalData := &types.NormalTransactionData{}
-		normalData = transaction.GetNormalData()
-		if err != nil {
-			fmt.Println("Error unmarshaling normal transaction data:", err)
-			return 1
-		}
-		res := app.handleNormalTransaction(*normalData)
-		if res != 0 {
-			fmt.Println("Error occured in executing transaction")
-			return 1
-		}
-		return 0
-		fmt.Println("Normal Transaction Data:", normalData)
-	case types.TransactionType_VerificationTransaction:
-		verificationData := &types.VerificationTransactionData{}
-		verificationData = transaction.GetVerificationData()
-		res := app.handleVerificationTransaction(*verificationData)
-		if res != 0 {
-			fmt.Println("Error occured in executing transaction")
-			return 1
-		}
-		return 0
-		fmt.Println("Verification Transaction Data:", verificationData)
-	case types.TransactionType_ResourceTransaction:
-		resourceData := &types.ResourceTransactionData{}
-		err := transaction.GetResourceData()
-		if err != nil {
-			fmt.Println("Error unmarshaling resource transaction data:", err)
-			return 1
-		}
-		res := app.handleResourceTransaction(*resourceData)
-		if res != 0 {
-			fmt.Println("Error occured in executing transaction")
-			return 1
-		}
-		return 0
-		fmt.Println("Resource Transaction Data:", resourceData)
-	default:
-		fmt.Println("Unknown transaction type")
-		return 1
-	}
-	return 0
-}
-
 func (app *VerificationApp) isValid(tx []byte) uint32 {
 	// check format
 	var transaction types.Transaction
@@ -261,35 +208,22 @@ func (app *VerificationApp) isValid(tx []byte) uint32 {
 	case types.TransactionType_NormalTransaction:
 		normalData := &types.NormalTransactionData{}
 		normalData = transaction.GetNormalData()
-		if err != nil {
-			fmt.Println("Error unmarshaling normal transaction data:", err)
-			return 1
-		}
-		return 0
 		fmt.Println("Normal Transaction Data:", normalData)
+		return 0
 	case types.TransactionType_VerificationTransaction:
 		verificationData := &types.VerificationTransactionData{}
 		verificationData = transaction.GetVerificationData()
-		if err != nil {
-			fmt.Println("Error unmarshaling verification transaction data:", err)
-			return 1
-		}
-		return 0
 		fmt.Println("Verification Transaction Data:", verificationData)
+		return 0
 	case types.TransactionType_ResourceTransaction:
 		resourceData := &types.ResourceTransactionData{}
 		resourceData = transaction.GetResourceData()
-		if err != nil {
-			fmt.Println("Error unmarshaling resource transaction data:", err)
-			return 1
-		}
-		return 0
 		fmt.Println("Resource Transaction Data:", resourceData)
+		return 0
 	default:
 		fmt.Println("Unknown transaction type")
 		return 1
 	}
-	return 1
 }
 
 func (app *VerificationApp) CheckTx(_ context.Context, check *abcitypes.RequestCheckTx) (*abcitypes.ResponseCheckTx, error) {
@@ -340,17 +274,6 @@ func (app *VerificationApp) VerifyVoteExtension(_ context.Context, verify *abcit
 	return &abcitypes.ResponseVerifyVoteExtension{}, nil
 }
 
-func (app *VerificationApp) handleNormalTransaction(tx types.NormalTransactionData) uint32 {
-	return 0
-}
-
-func (app *VerificationApp) handleVerificationTransaction(tx types.VerificationTransactionData) uint32 {
-	return 0
-}
-
-func (app *VerificationApp) handleResourceTransaction(tx types.ResourceTransactionData) uint32 {
-	return 0
-}
 func (app *VerificationApp) Info(_ context.Context, info *abcitypes.RequestInfo) (*abcitypes.ResponseInfo, error) {
 	return &abcitypes.ResponseInfo{}, nil
 }
