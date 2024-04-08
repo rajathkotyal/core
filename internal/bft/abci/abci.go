@@ -19,11 +19,15 @@ import (
 )
 
 type VerificationApp struct {
-	db               *badger.DB
-	onGoingBlock     *badger.Txn
-	publicKey        []byte
-	assignedRequests []collector.Request
+	db                     *badger.DB
+	onGoingBlock           *badger.Txn
+	publicKey              []byte
+	assignedRequests       []collector.Request
+	validatorPriorities    [][]collector.Request
+	validatorFreeThisRound []bool
 }
+
+const VALIDATOR_PREALLOCATED_COUNT = 2000
 
 var _ abcitypes.Application = (*VerificationApp)(nil)
 
@@ -31,49 +35,46 @@ func (app *VerificationApp) GetRequestsDue() []collector.Request {
 	return app.assignedRequests
 }
 
-var testval = 0
-
 func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.RequestFinalizeBlock) (*abcitypes.ResponseFinalizeBlock, error) {
 	var txs = make([]*abcitypes.ExecTxResult, len(req.Txs))
 	log.Debug("Finalizing block ", time.Now().Unix())
 
 	app.onGoingBlock = app.db.NewTransaction(true)
-	for i, tx := range req.Txs {
-		if code := app.isValid(tx); code != 0 {
-			log.Warn("Error: invalid transaction index %v", i)
-			txs[i] = &abcitypes.ExecTxResult{Code: code}
-		} else {
-			// This is just one type of transaction.
 
-			// parts := bytes.SplitN(tx, []byte("="), 2)
-			// key, value := parts[0], parts[1]
-			// log.Info("Adding key %s with value %s", key, value)
+	// Invalid transactions get included in blocks just like valid transactions do so checking here is basically pointless!
 
-			// if err := app.onGoingBlock.Set(key, value); err != nil {
-			// 	log.Panicf("Error writing to database, unable to execute tx: %v", err)
-			// }
+	//for i := range req.Txs {
+	//	// if code := app.isValid(tx); code != 0 {
+	//	// 	log.Warn("Error: invalid transaction index %v", i)
+	//	// 	txs[i] = &abcitypes.ExecTxResult{Code: code}
+	//	// } else {
+	//	// 	// This is just one type of transaction.
 
-			// log.Info("Successfully added key %s with value %s", key, value)
+	//	// 	// parts := bytes.SplitN(tx, []byte("="), 2)
+	//	// 	// key, value := parts[0], parts[1]
+	//	// 	// log.Info("Adding key %s with value %s", key, value)
 
-			// Accept all transactions that are valid! But don't store them lmao
+	//	// 	// if err := app.onGoingBlock.Set(key, value); err != nil {
+	//	// 	// 	log.Panicf("Error writing to database, unable to execute tx: %v", err)
+	//	// 	// }
 
-			txs[i] = &abcitypes.ExecTxResult{}
-			// if testval%2 == 0 {
-			// 	log.Error("THIS RAN")
-			// 	txs[i] = &abcitypes.ExecTxResult{Code: code}
-			// }
+	//	// 	// log.Info("Successfully added key %s with value %s", key, value)
 
-			testval++
-		}
+	//	// 	// Accept all transactions that are valid! But don't store them lmao
 
-		// Need a different mechanism for the transactions that bring verification data.
-		// Roughly:
-		//	- Make sure the transaction itself is solid.
-		//	- Sort by source then by rank.
-		//	- Highest ranked transactions are marked for storage, the rest are discarded.
-		//	- .
-	}
+	//	// 	txs[i] = &abcitypes.ExecTxResult{}
+	//	// 	log.Error("THIS RAN ", testval, testval%2)
+	//	// }
 
+	//	// Need a different mechanism for the transactions that bring verification data.
+	//	// Roughly:
+	//	//	- Make sure the transaction itself is solid.
+	//	//	- Sort by source then by rank.
+	//	//	- Highest ranked transactions are marked for storage, the rest are discarded.
+	//	//	- Store on here?
+	//}
+
+	// Select sources pseudo-randomly.
 	{
 		// Turn hash to 64 bit integer to use as rand seed.
 		var r *rand.Rand
@@ -89,61 +90,66 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 
 		// Not sure what the right number of rounds is :shrug:. Chosing arbitrarily.
 		roundAmount := 10
+		validatorCount := len(req.DecidedLastCommit.Votes)
 
-		// Go through voters and pick set that voted.
-		// NOTE(Tom): This algorithm gives earlier sources higher priority.
-		validatorFreeThisRound := make([]bool, len(req.DecidedLastCommit.Votes))
-		validatorPriorities := make([][]collector.Request, len(req.DecidedLastCommit.Votes))
-		for i := range validatorPriorities {
-			validatorPriorities[i] = make([]collector.Request, 0, roundAmount)
+		if validatorCount > VALIDATOR_PREALLOCATED_COUNT {
+			// XXX: Handle more intelligently.
+			app.validatorFreeThisRound = make([]bool, validatorCount)
+			app.validatorPriorities = make([][]collector.Request, validatorCount)
+		} else {
+			// Go through voters and pick set that voted.
+			app.validatorFreeThisRound = app.validatorFreeThisRound[:validatorCount]
+			app.validatorPriorities = app.validatorPriorities[:validatorCount]
+		}
+
+		for i := range app.validatorPriorities {
+			app.validatorPriorities[i] = make([]collector.Request, 0, roundAmount)
 		}
 		log.Info("Started source selection.")
 
-		for round := 0; round < roundAmount && len(validatorPriorities) > 0; round++ {
+		// NOTE(Tom): This algorithm gives earlier sources higher priority.
+		for round := 0; round < roundAmount && len(app.validatorPriorities) > 0; round++ {
 			// log.Info("Round:", round)
-			for i := range validatorFreeThisRound {
-				validatorFreeThisRound[i] = true
+			for i := range app.validatorFreeThisRound {
+				app.validatorFreeThisRound[i] = true
 			}
 
-			r.Shuffle(len(validatorPriorities), func(i, j int) {
+			r.Shuffle(len(app.validatorPriorities), func(i, j int) {
 				{
-					temp := validatorFreeThisRound[j]
-					validatorFreeThisRound[j] = validatorFreeThisRound[i]
-					validatorFreeThisRound[i] = temp
+					temp := app.validatorFreeThisRound[j]
+					app.validatorFreeThisRound[j] = app.validatorFreeThisRound[i]
+					app.validatorFreeThisRound[i] = temp
 				}
 
 				{
-					temp := validatorPriorities[j]
-					validatorPriorities[j] = validatorPriorities[i]
-					validatorPriorities[i] = temp
+					temp := app.validatorPriorities[j]
+					app.validatorPriorities[j] = app.validatorPriorities[i]
+					app.validatorPriorities[i] = temp
 				}
 			})
 
 			for i := range collector.Sources {
 				for j := range collector.Sources[i].Topics {
+					for k := range app.validatorFreeThisRound {
 
-					// If there isn't at least one free validator this round, then we would loop forever.
-					// Hence the check above.
-					for k := range validatorFreeThisRound {
-
-						if validatorFreeThisRound[k] {
+						if app.validatorFreeThisRound[k] {
 
 							// Make sure that they're not already assigned to this source.
 							alreadyAssigned := false
-							for _, req := range validatorPriorities[k] {
+							for _, req := range app.validatorPriorities[k] {
 								if req.Source.Name == collector.Sources[i].Name && req.Topic == j {
 									alreadyAssigned = true
 								}
 							}
 
 							if !alreadyAssigned {
-								validatorFreeThisRound[k] = false
+								app.validatorFreeThisRound[k] = false
 
 								req := collector.Request{
 									Source: collector.Sources[i],
 									Topic:  j,
 								}
-								validatorPriorities[k] = append(validatorPriorities[k], req)
+								app.validatorPriorities[k] = append(app.validatorPriorities[k], req)
 
 								// log.Info("Found validator for source.")
 								break
@@ -158,7 +164,7 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 		// Decouple this from abci?
 
 		log.Info("Done sorting preferences, writting our requests.")
-		for i := range validatorPriorities {
+		for i := range app.validatorPriorities {
 			validator := req.DecidedLastCommit.Votes[i].GetValidator()
 
 			temp := sha256.Sum256(app.publicKey)
@@ -168,7 +174,7 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 			if bytes.Equal(validator.Address, addr) {
 				log.Info("Found priorities for node.")
 
-				app.assignedRequests = validatorPriorities[i]
+				app.assignedRequests = app.validatorPriorities[i]
 				break
 			}
 		}
@@ -238,11 +244,16 @@ func (app *VerificationApp) isValid(tx []byte) uint32 {
 
 func (app *VerificationApp) CheckTx(_ context.Context, check *abcitypes.RequestCheckTx) (*abcitypes.ResponseCheckTx, error) {
 	code := app.isValid(check.Tx)
+
 	return &abcitypes.ResponseCheckTx{Code: code}, nil
 }
 
 func NewVerificationApp(publicKey []byte, db *badger.DB) *VerificationApp {
-	return &VerificationApp{publicKey: publicKey, db: db}
+	return &VerificationApp{
+		publicKey:              publicKey,
+		validatorPriorities:    make([][]collector.Request, 0, VALIDATOR_PREALLOCATED_COUNT),
+		validatorFreeThisRound: make([]bool, 0, VALIDATOR_PREALLOCATED_COUNT),
+		db:                     db}
 }
 
 func (app *VerificationApp) InitChain(_ context.Context, chain *abcitypes.RequestInitChain) (*abcitypes.ResponseInitChain, error) {
