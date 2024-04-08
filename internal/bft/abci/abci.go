@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"math/rand"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	// "math/rand"
+	crypt "github.com/cometbft/cometbft/proto/tendermint/crypto"
 	"github.com/openmesh-network/core/collector"
 	"github.com/openmesh-network/core/internal/bft/types"
 	log "github.com/openmesh-network/core/internal/logger"
@@ -40,6 +43,116 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 	log.Debug("Finalizing block ", time.Now().Unix())
 
 	app.onGoingBlock = app.db.NewTransaction(true)
+	var validatorupdates = make([]abcitypes.ValidatorUpdate, 0, len(req.Txs))
+	app.onGoingBlock = app.db.NewTransaction(true)
+	for i, tx := range req.Txs {
+		if code := app.isValid(tx); code != 0 {
+			log.Error("Error: invalid transaction index %v", i)
+			txs[i] = &abcitypes.ExecTxResult{Code: code}
+		} else {
+			var transaction types.Transaction
+			hexString := string(tx)
+			tx, _ = hex.DecodeString(hexString)
+			err := proto.Unmarshal(tx, &transaction)
+			if err != nil {
+				log.Error("Error unmarshaling transaction data:", err)
+				txs[i] = &abcitypes.ExecTxResult{Code: 1}
+			}
+
+			switch transaction.Type {
+			case types.TransactionType_NormalTransaction:
+				normalData := &types.NormalTransactionData{}
+				normalData = transaction.GetNormalData()
+				log.Debug("Resource Transaction Data:", transaction)
+				if normalData == nil {
+					log.Error("Error: Normal Data is nil %v", i)
+					txs[i] = &abcitypes.ExecTxResult{Code: 1}
+				}
+				res := app.handleNormalTransaction(*normalData)
+				if res != 0 {
+					log.Error("Error: Response from normal Data is not proper %v", i)
+					txs[i] = &abcitypes.ExecTxResult{Code: 1}
+				}
+				txs[i] = &abcitypes.ExecTxResult{}
+				log.Debug("Normal Transaction Data:", normalData)
+			case types.TransactionType_VerificationTransaction:
+				verificationData := &types.VerificationTransactionData{}
+				verificationData = transaction.GetVerificationData()
+				if err != nil {
+					log.Error("Error: invalid transaction index %v", i)
+					txs[i] = &abcitypes.ExecTxResult{Code: 1}
+				}
+				res := app.handleVerificationTransaction(*verificationData)
+				log.Debug("Handle transaction recieved")
+				if res != 0 {
+					log.Error("Error: invalid transaction index %v", i)
+					txs[i] = &abcitypes.ExecTxResult{Code: 1}
+				}
+				txs[i] = &abcitypes.ExecTxResult{}
+				log.Debug("Verification Transaction Data:", verificationData)
+			case types.TransactionType_ResourceTransaction:
+				resourceData := &types.ResourceTransactionData{}
+				resourceData = transaction.GetResourceData()
+				log.Debug("Resource Transaction Data:", transaction)
+				if err != nil {
+					log.Error("Error: invalid transaction index %v", i)
+					txs[i] = &abcitypes.ExecTxResult{Code: 1}
+				}
+				res := app.handleResourceTransaction(*resourceData)
+				if res != 0 {
+					log.Error("Error: invalid transaction index %v", i)
+					txs[i] = &abcitypes.ExecTxResult{Code: 1}
+				}
+				txs[i] = &abcitypes.ExecTxResult{}
+				log.Debug("Resource Transaction Data:", resourceData)
+
+			case types.TransactionType_NodeRegistrationTransaction:
+				registrationData := &types.NodeRegistrationTransactionData{}
+				registrationData = transaction.GetNodeRegistrationData()
+				log.Debug("Resource Transaction Data:", registrationData)
+				publicKeyString := registrationData.GetNodeAddress()
+				pubKeyBytes, err := base64.StdEncoding.DecodeString(publicKeyString)
+				if err != nil {
+					log.Error("Error decoding Base64:", err)
+
+				}
+
+				var publicKeyMessage = &crypt.PublicKey{
+					Sum: &crypt.PublicKey_Ed25519{
+						Ed25519: pubKeyBytes,
+					},
+				}
+
+				if err != nil {
+					log.Error("Error marshalling PublicKey message:", err)
+
+				}
+
+				if err != nil {
+					log.Debug("problem alert", err)
+				}
+
+				if err != nil {
+					// Handle error, e.g., invalid public key format
+					log.Error("Error: invalid pubkey index %v", i)
+					txs[i] = &abcitypes.ExecTxResult{Code: 1}
+				}
+
+				txs[i] = &abcitypes.ExecTxResult{}
+				validatorup := &abcitypes.ValidatorUpdate{
+					PubKey: *publicKeyMessage,
+					Power:  10,
+				}
+				validatorupdates = append(validatorupdates, *validatorup)
+				log.Debug("Resource Transaction Data:", registrationData)
+
+			default:
+				log.Error("Unknown transaction type")
+				txs[i] = &abcitypes.ExecTxResult{Code: code}
+			}
+
+		}
+	}
 
 	// Invalid transactions get included in blocks just like valid transactions do so checking here is basically pointless!
 
@@ -197,7 +310,26 @@ func (app *VerificationApp) Query(_ context.Context, req *abcitypes.RequestQuery
 			resp.Log = "key does not exist"
 			return nil
 		}
+		dbErr := app.db.View(func(txn *badger.Txn) error {
+			item, err := txn.Get(req.Data)
+			if err != nil {
+				if err != badger.ErrKeyNotFound {
+					return err
+				}
+				resp.Log = "key does not exist"
+				return nil
+			}
 
+			return item.Value(func(val []byte) error {
+				resp.Log = "exists"
+				resp.Value = val
+				return nil
+			})
+		})
+		if dbErr != nil {
+			log.Panicf("Error reading database, unable to execute query: %v", dbErr)
+		}
+		return &resp, nil
 		return item.Value(func(val []byte) error {
 			resp.Log = "exists"
 			resp.Value = val
@@ -213,9 +345,11 @@ func (app *VerificationApp) Query(_ context.Context, req *abcitypes.RequestQuery
 func (app *VerificationApp) isValid(tx []byte) uint32 {
 	// check format
 	var transaction types.Transaction
+	hexString := string(tx)
+	tx, _ = hex.DecodeString(hexString)
 	err := proto.Unmarshal(tx, &transaction)
 	if err != nil {
-		fmt.Println("Error unmarshaling transaction data:", err)
+		log.Error("Error unmarshaling transaction data:", err)
 		return 1
 	}
 
@@ -237,7 +371,7 @@ func (app *VerificationApp) isValid(tx []byte) uint32 {
 		fmt.Println("Resource Transaction Data:", resourceData)
 		return 0
 	default:
-		fmt.Println("Unknown transaction type")
+		log.Error("Unknown transaction type")
 		return 1
 	}
 }
@@ -273,49 +407,60 @@ func (app *VerificationApp) InitChain(_ context.Context, chain *abcitypes.Reques
 	return &abcitypes.ResponseInitChain{}, nil
 }
 
-func (app *VerificationApp) PrepareProposal(_ context.Context, proposal *abcitypes.RequestPrepareProposal) (*abcitypes.ResponsePrepareProposal, error) {
+/**
+func (app *KVStoreApplication) handleNodeRegistrationTransaction(tx types.NodeRegistrationTransactionData) types.NodeRegistrationTransactionData {
+	log.Printf("Handle transaction recieved")
+	return 0
+}**/
 
-	// Only accept transactions that fit in the correct order?
-
-	return &abcitypes.ResponsePrepareProposal{Txs: proposal.Txs}, nil
+func (app *VerificationApp) handleResourceTransaction(tx types.ResourceTransactionData) uint32 {
+	return 0
 }
-func (app *VerificationApp) ProcessProposal(_ context.Context, proposal *abcitypes.RequestProcessProposal) (*abcitypes.ResponseProcessProposal, error) {
-
-
-	// Supposedly it's bad for performance to reject crappy blocks. 
-	// I think we should be a strict as possible, and give death penalty to misbehaving nodes basically.
-
-	return &abcitypes.ResponseProcessProposal{Status: abcitypes.ResponseProcessProposal_ACCEPT}, nil
+func (app *VerificationApp) handleNormalTransaction(tx types.NormalTransactionData) uint32 {
+	return 0
 }
 
-func (app VerificationApp) Commit(_ context.Context, commit *abcitypes.RequestCommit) (*abcitypes.ResponseCommit, error) {
-	return &abcitypes.ResponseCommit{}, app.onGoingBlock.Commit()
-}
+func (app *VerificationApp) isValid(tx []byte) uint32 {
+	// check format
+	var transaction types.Transaction
+	err := proto.Unmarshal(tx, &transaction)
+	if err != nil {
+		fmt.Println("Error unmarshaling transaction data:", err)
+		return 1
+	}
 
-func (app *VerificationApp) ListSnapshots(_ context.Context, snapshots *abcitypes.RequestListSnapshots) (*abcitypes.ResponseListSnapshots, error) {
-	return &abcitypes.ResponseListSnapshots{}, nil
-}
-
-func (app *VerificationApp) OfferSnapshot(_ context.Context, snapshot *abcitypes.RequestOfferSnapshot) (*abcitypes.ResponseOfferSnapshot, error) {
-	return &abcitypes.ResponseOfferSnapshot{}, nil
-}
-
-func (app *VerificationApp) LoadSnapshotChunk(_ context.Context, chunk *abcitypes.RequestLoadSnapshotChunk) (*abcitypes.ResponseLoadSnapshotChunk, error) {
-	return &abcitypes.ResponseLoadSnapshotChunk{}, nil
-}
-
-func (app *VerificationApp) ApplySnapshotChunk(_ context.Context, chunk *abcitypes.RequestApplySnapshotChunk) (*abcitypes.ResponseApplySnapshotChunk, error) {
-	return &abcitypes.ResponseApplySnapshotChunk{Result: abcitypes.ResponseApplySnapshotChunk_ACCEPT}, nil
-}
-
-func (app VerificationApp) ExtendVote(_ context.Context, extend *abcitypes.RequestExtendVote) (*abcitypes.ResponseExtendVote, error) {
-	return &abcitypes.ResponseExtendVote{}, nil
-}
-
-func (app *VerificationApp) VerifyVoteExtension(_ context.Context, verify *abcitypes.RequestVerifyVoteExtension) (*abcitypes.ResponseVerifyVoteExtension, error) {
-	return &abcitypes.ResponseVerifyVoteExtension{}, nil
-}
-
-func (app *VerificationApp) Info(_ context.Context, info *abcitypes.RequestInfo) (*abcitypes.ResponseInfo, error) {
-	return &abcitypes.ResponseInfo{}, nil
+	// Check the transaction type and handle accordingly
+	switch transaction.Type {
+	case types.TransactionType_NormalTransaction:
+		normalData := &types.NormalTransactionData{}
+		normalData = transaction.GetNormalData()
+		if err != nil {
+			fmt.Println("Error unmarshaling normal transaction data:", err)
+			return 1
+		}
+		return 0
+		fmt.Println("Normal Transaction Data:", normalData)
+	case types.TransactionType_VerificationTransaction:
+		verificationData := &types.VerificationTransactionData{}
+		verificationData = transaction.GetVerificationData()
+		if err != nil {
+			fmt.Println("Error unmarshaling verification transaction data:", err)
+			return 1
+		}
+		return 0
+		fmt.Println("Verification Transaction Data:", verificationData)
+	case types.TransactionType_ResourceTransaction:
+		resourceData := &types.ResourceTransactionData{}
+		resourceData = transaction.GetResourceData()
+		if err != nil {
+			fmt.Println("Error unmarshaling resource transaction data:", err)
+			return 1
+		}
+		return 0
+		fmt.Println("Resource Transaction Data:", resourceData)
+	default:
+		fmt.Println("Unknown transaction type")
+		return 1
+	}
+	return 1
 }
