@@ -245,6 +245,19 @@ func (app *VerificationApp) isValid(tx []byte) uint32 {
 func (app *VerificationApp) CheckTx(_ context.Context, check *abcitypes.RequestCheckTx) (*abcitypes.ResponseCheckTx, error) {
 	code := app.isValid(check.Tx)
 
+	// XXX: Skip all this if the type is not verification!
+
+	{
+		// Check against stored transactions and see if there's a higher priority transaction already stored.
+		priority := 0
+		priorityStoredHighest := 0
+
+		if priority < priorityStoredHighest {
+			// Transaction is not valid, a higher priority exists already.
+			code = 1
+		}
+	}
+
 	return &abcitypes.ResponseCheckTx{Code: code}, nil
 }
 
@@ -261,9 +274,17 @@ func (app *VerificationApp) InitChain(_ context.Context, chain *abcitypes.Reques
 }
 
 func (app *VerificationApp) PrepareProposal(_ context.Context, proposal *abcitypes.RequestPrepareProposal) (*abcitypes.ResponsePrepareProposal, error) {
+
+	// Only accept transactions that fit in the correct order?
+
 	return &abcitypes.ResponsePrepareProposal{Txs: proposal.Txs}, nil
 }
 func (app *VerificationApp) ProcessProposal(_ context.Context, proposal *abcitypes.RequestProcessProposal) (*abcitypes.ResponseProcessProposal, error) {
+
+
+	// Supposedly it's bad for performance to reject crappy blocks. 
+	// I think we should be a strict as possible, and give death penalty to misbehaving nodes basically.
+
 	return &abcitypes.ResponseProcessProposal{Status: abcitypes.ResponseProcessProposal_ACCEPT}, nil
 }
 
