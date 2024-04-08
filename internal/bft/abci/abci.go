@@ -37,7 +37,55 @@ var _ abcitypes.Application = (*VerificationApp)(nil)
 func (app *VerificationApp) GetRequestsDue() []collector.Request {
 	return app.assignedRequests
 }
+func (app *VerificationApp) InitChain(_ context.Context, chain *abcitypes.RequestInitChain) (*abcitypes.ResponseInitChain, error) {
+	return &abcitypes.ResponseInitChain{}, nil
+}
 
+func (app *VerificationApp) PrepareProposal(_ context.Context, proposal *abcitypes.RequestPrepareProposal) (*abcitypes.ResponsePrepareProposal, error) {
+
+	// Only accept transactions that fit in the correct order?
+
+	return &abcitypes.ResponsePrepareProposal{Txs: proposal.Txs}, nil
+}
+func (app *VerificationApp) ProcessProposal(_ context.Context, proposal *abcitypes.RequestProcessProposal) (*abcitypes.ResponseProcessProposal, error) {
+
+	// Supposedly it's bad for performance to reject crappy blocks.
+	// I think we should be a strict as possible, and give death penalty to misbehaving nodes basically.
+
+	return &abcitypes.ResponseProcessProposal{Status: abcitypes.ResponseProcessProposal_ACCEPT}, nil
+}
+
+func (app VerificationApp) Commit(_ context.Context, commit *abcitypes.RequestCommit) (*abcitypes.ResponseCommit, error) {
+	return &abcitypes.ResponseCommit{}, app.onGoingBlock.Commit()
+}
+
+func (app *VerificationApp) ListSnapshots(_ context.Context, snapshots *abcitypes.RequestListSnapshots) (*abcitypes.ResponseListSnapshots, error) {
+	return &abcitypes.ResponseListSnapshots{}, nil
+}
+
+func (app *VerificationApp) OfferSnapshot(_ context.Context, snapshot *abcitypes.RequestOfferSnapshot) (*abcitypes.ResponseOfferSnapshot, error) {
+	return &abcitypes.ResponseOfferSnapshot{}, nil
+}
+
+func (app *VerificationApp) LoadSnapshotChunk(_ context.Context, chunk *abcitypes.RequestLoadSnapshotChunk) (*abcitypes.ResponseLoadSnapshotChunk, error) {
+	return &abcitypes.ResponseLoadSnapshotChunk{}, nil
+}
+
+func (app *VerificationApp) ApplySnapshotChunk(_ context.Context, chunk *abcitypes.RequestApplySnapshotChunk) (*abcitypes.ResponseApplySnapshotChunk, error) {
+	return &abcitypes.ResponseApplySnapshotChunk{Result: abcitypes.ResponseApplySnapshotChunk_ACCEPT}, nil
+}
+
+func (app VerificationApp) ExtendVote(_ context.Context, extend *abcitypes.RequestExtendVote) (*abcitypes.ResponseExtendVote, error) {
+	return &abcitypes.ResponseExtendVote{}, nil
+}
+
+func (app *VerificationApp) VerifyVoteExtension(_ context.Context, verify *abcitypes.RequestVerifyVoteExtension) (*abcitypes.ResponseVerifyVoteExtension, error) {
+	return &abcitypes.ResponseVerifyVoteExtension{}, nil
+}
+
+func (app *VerificationApp) Info(_ context.Context, info *abcitypes.RequestInfo) (*abcitypes.ResponseInfo, error) {
+	return &abcitypes.ResponseInfo{}, nil
+}
 func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.RequestFinalizeBlock) (*abcitypes.ResponseFinalizeBlock, error) {
 	var txs = make([]*abcitypes.ExecTxResult, len(req.Txs))
 	log.Debug("Finalizing block ", time.Now().Unix())
@@ -310,26 +358,7 @@ func (app *VerificationApp) Query(_ context.Context, req *abcitypes.RequestQuery
 			resp.Log = "key does not exist"
 			return nil
 		}
-		dbErr := app.db.View(func(txn *badger.Txn) error {
-			item, err := txn.Get(req.Data)
-			if err != nil {
-				if err != badger.ErrKeyNotFound {
-					return err
-				}
-				resp.Log = "key does not exist"
-				return nil
-			}
 
-			return item.Value(func(val []byte) error {
-				resp.Log = "exists"
-				resp.Value = val
-				return nil
-			})
-		})
-		if dbErr != nil {
-			log.Panicf("Error reading database, unable to execute query: %v", dbErr)
-		}
-		return &resp, nil
 		return item.Value(func(val []byte) error {
 			resp.Log = "exists"
 			resp.Value = val
@@ -403,64 +432,20 @@ func NewVerificationApp(publicKey []byte, db *badger.DB) *VerificationApp {
 		db:                     db}
 }
 
-func (app *VerificationApp) InitChain(_ context.Context, chain *abcitypes.RequestInitChain) (*abcitypes.ResponseInitChain, error) {
-	return &abcitypes.ResponseInitChain{}, nil
-}
-
 /**
 func (app *KVStoreApplication) handleNodeRegistrationTransaction(tx types.NodeRegistrationTransactionData) types.NodeRegistrationTransactionData {
 	log.Printf("Handle transaction recieved")
 	return 0
 }**/
 
-func (app *VerificationApp) handleResourceTransaction(tx types.ResourceTransactionData) uint32 {
-	return 0
-}
 func (app *VerificationApp) handleNormalTransaction(tx types.NormalTransactionData) uint32 {
 	return 0
 }
 
-func (app *VerificationApp) isValid(tx []byte) uint32 {
-	// check format
-	var transaction types.Transaction
-	err := proto.Unmarshal(tx, &transaction)
-	if err != nil {
-		fmt.Println("Error unmarshaling transaction data:", err)
-		return 1
-	}
+func (app *VerificationApp) handleVerificationTransaction(tx types.VerificationTransactionData) uint32 {
+	return 0
+}
 
-	// Check the transaction type and handle accordingly
-	switch transaction.Type {
-	case types.TransactionType_NormalTransaction:
-		normalData := &types.NormalTransactionData{}
-		normalData = transaction.GetNormalData()
-		if err != nil {
-			fmt.Println("Error unmarshaling normal transaction data:", err)
-			return 1
-		}
-		return 0
-		fmt.Println("Normal Transaction Data:", normalData)
-	case types.TransactionType_VerificationTransaction:
-		verificationData := &types.VerificationTransactionData{}
-		verificationData = transaction.GetVerificationData()
-		if err != nil {
-			fmt.Println("Error unmarshaling verification transaction data:", err)
-			return 1
-		}
-		return 0
-		fmt.Println("Verification Transaction Data:", verificationData)
-	case types.TransactionType_ResourceTransaction:
-		resourceData := &types.ResourceTransactionData{}
-		resourceData = transaction.GetResourceData()
-		if err != nil {
-			fmt.Println("Error unmarshaling resource transaction data:", err)
-			return 1
-		}
-		return 0
-		fmt.Println("Resource Transaction Data:", resourceData)
-	default:
-		fmt.Println("Unknown transaction type")
-		return 1
-	}
-	return 1
+func (app *VerificationApp) handleResourceTransaction(tx types.ResourceTransactionData) uint32 {
+	return 0
 }
