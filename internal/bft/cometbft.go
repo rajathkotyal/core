@@ -3,14 +3,15 @@ package bft
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"os"
-	"strconv"
 	"time"
 
 	cfg "github.com/cometbft/cometbft/config"
 	cmtflags "github.com/cometbft/cometbft/libs/cli/flags"
 	cmtlog "github.com/cometbft/cometbft/libs/log"
+	"github.com/cometbft/cometbft/libs/rand"
 	nm "github.com/cometbft/cometbft/node"
 	bftp2p "github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
@@ -31,6 +32,7 @@ import (
 // Instance is the CometBFT instance
 type Instance struct {
 	Config    *cfg.Config
+	Addr      []byte
 	BftNode   *nm.Node
 	Collector *collector.CollectorInstance
 	app       *abci.VerificationApp
@@ -100,12 +102,15 @@ func NewInstance(db *badger.DB, collector *collector.CollectorInstance) (*Instan
 		return nil, err
 	}
 
-	return &Instance{Config: conf, BftNode: node, app: app, collector: collector}, nil
+	temp := sha256.Sum256(publicKey.Bytes())
+	return &Instance{Config: conf, BftNode: node, app: app, collector: collector, Addr: temp[:20]}, nil
 }
 
 // Start the CometBFT node
 func (inst *Instance) Start(ctx context.Context) {
 	eventBus := inst.BftNode.EventBus()
+
+	base64AddrString := base64.StdEncoding.EncodeToString(inst.Addr)
 
 	newBlock, err := eventBus.Subscribe(ctx, "mainId", types.EventQueryNewBlock)
 	if err != nil {
@@ -123,66 +128,49 @@ func (inst *Instance) Start(ctx context.Context) {
 				eventBus.UnsubscribeAll(ctx, "mainId")
 				return
 			case <-newBlock.Out():
-				requests := inst.app.GetRequestsDue()
-
-				var summaries []collector.Summary
-				if requests != nil {
-					summaries = inst.collector.SubmitRequests(requests)
-				} else {
-					log.Debug("No requests this block :(")
-				}
-
-				for i := range summaries {
-					log.Debug("Went through: ", i, " summaries. ", summaries[i])
-					s := summaries[i]
-					r := requests[i]
-
-					if len(s.DataHashes) < 1 {
-						log.Debug("No hash for this source :(")
-					} else {
-						// Format as a transactionMessage
-						transactionMessage := otypes.Transaction{
-							Owner:     "John Doe",
-							Signature: strconv.Itoa(i),
-							Type:      *otypes.TransactionType_VerificationTransaction.Enum(),
-						}
-
-						transactionMessage.Data = &otypes.Transaction_VerificationData{
-							VerificationData: &otypes.VerificationTransactionData{
-								// XXX: Actually provide attestation here.
-								Attestation: "",
-								// XXX: Need to decide how we're building the cids.
-								// There's a tradeoff between blockchain size and download speed.
-								Cid:        s.DataHashes[0].String(),
-								Datasource: r.Source.Name + "-" + r.Source.Topics[r.Topic],
-								// XXX: Should this be the time it started being recorded or ended?
-								Timestamp: time.Now().Unix(),
-							},
-						}
-
-						transactionBytes, err := proto.Marshal(&transactionMessage)
-						if err != nil {
-							panic(err)
-						}
-
-						transaction := types.Tx(transactionBytes[:])
-
-						env, err := inst.BftNode.ConfigureRPC()
-
-						if err != nil {
-							panic(err)
-						}
-
-						log.Debug("Pushing transaction with hash: ", sha256.Sum256(transactionBytes))
-						_, err = env.BroadcastTxAsync(&rpctypes.Context{}, transaction)
-
-						if err != nil {
-							panic(err)
-						}
-						log.Debug("Succesfully pushed transaction!")
-
-						log.Debug("Got summary: ", s)
+				for i := 0; i < collector.WORKER_COUNT; i++ {
+					// Format as a transactionMessage
+					transactionMessage := otypes.Transaction{
+						Owner:     base64AddrString,
+						Signature: "",
+						Type:      *otypes.TransactionType_VerificationTransaction.Enum(),
 					}
+
+					// Build some dataset.
+					transactionMessage.Data = &otypes.Transaction_VerificationData{
+						VerificationData: &otypes.VerificationTransactionData{
+							// XXX: Actually provide attestation here.
+							Attestation: "",
+							// XXX: Need to decide how we're building the cids.
+							// There's a tradeoff between blockchain size and download speed.
+							// Make a fake but plausible CID
+							Cid:        base64.StdEncoding.EncodeToString(rand.Bytes(40)),
+							Datasource: "examplesource" + "-" + "exampletopic",
+							// XXX: Should this be the time it started being recorded or ended?
+							Timestamp: time.Now().Unix(),
+						},
+					}
+
+					transactionBytes, err := proto.Marshal(&transactionMessage)
+					if err != nil {
+						panic(err)
+					}
+
+					transaction := types.Tx(transactionBytes[:])
+
+					env, err := inst.BftNode.ConfigureRPC()
+
+					if err != nil {
+						panic(err)
+					}
+
+					log.Debug("Pushing transaction with hash: ", sha256.Sum256(transactionBytes))
+					_, err = env.BroadcastTxAsync(&rpctypes.Context{}, transaction)
+
+					if err != nil {
+						panic(err)
+					}
+					log.Debug("Succesfully pushed transaction!")
 				}
 			}
 		}

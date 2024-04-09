@@ -53,37 +53,6 @@ func (app *VerificationApp) ProcessProposal(_ context.Context, proposal *abcityp
 	return &abcitypes.ResponseProcessProposal{Status: abcitypes.ResponseProcessProposal_ACCEPT}, nil
 }
 
-func (app VerificationApp) Commit(_ context.Context, commit *abcitypes.RequestCommit) (*abcitypes.ResponseCommit, error) {
-	return &abcitypes.ResponseCommit{}, app.onGoingBlock.Commit()
-}
-
-func (app *VerificationApp) ListSnapshots(_ context.Context, snapshots *abcitypes.RequestListSnapshots) (*abcitypes.ResponseListSnapshots, error) {
-	return &abcitypes.ResponseListSnapshots{}, nil
-}
-
-func (app *VerificationApp) OfferSnapshot(_ context.Context, snapshot *abcitypes.RequestOfferSnapshot) (*abcitypes.ResponseOfferSnapshot, error) {
-	return &abcitypes.ResponseOfferSnapshot{}, nil
-}
-
-func (app *VerificationApp) LoadSnapshotChunk(_ context.Context, chunk *abcitypes.RequestLoadSnapshotChunk) (*abcitypes.ResponseLoadSnapshotChunk, error) {
-	return &abcitypes.ResponseLoadSnapshotChunk{}, nil
-}
-
-func (app *VerificationApp) ApplySnapshotChunk(_ context.Context, chunk *abcitypes.RequestApplySnapshotChunk) (*abcitypes.ResponseApplySnapshotChunk, error) {
-	return &abcitypes.ResponseApplySnapshotChunk{Result: abcitypes.ResponseApplySnapshotChunk_ACCEPT}, nil
-}
-
-func (app VerificationApp) ExtendVote(_ context.Context, extend *abcitypes.RequestExtendVote) (*abcitypes.ResponseExtendVote, error) {
-	return &abcitypes.ResponseExtendVote{}, nil
-}
-
-func (app *VerificationApp) VerifyVoteExtension(_ context.Context, verify *abcitypes.RequestVerifyVoteExtension) (*abcitypes.ResponseVerifyVoteExtension, error) {
-	return &abcitypes.ResponseVerifyVoteExtension{}, nil
-}
-
-func (app *VerificationApp) Info(_ context.Context, info *abcitypes.RequestInfo) (*abcitypes.ResponseInfo, error) {
-	return &abcitypes.ResponseInfo{}, nil
-}
 func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.RequestFinalizeBlock) (*abcitypes.ResponseFinalizeBlock, error) {
 	var txs = make([]*abcitypes.ExecTxResult, len(req.Txs))
 	log.Debug("Finalizing block ", time.Now().Unix())
@@ -157,7 +126,7 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 			case types.TransactionType_NodeRegistrationTransaction:
 				registrationData := &types.NodeRegistrationTransactionData{}
 				registrationData = transaction.GetNodeRegistrationData()
-				log.Debug("Resource Transaction Data:", registrationData)
+				log.Debug("Node Registration Transaction Data:", registrationData)
 				publicKeyString := registrationData.GetNodeAddress()
 				pubKeyBytes, err := base64.StdEncoding.DecodeString(publicKeyString)
 				if err != nil {
@@ -192,7 +161,7 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 					Power:  10,
 				}
 				validatorupdates = append(validatorupdates, *validatorup)
-				log.Debug("Resource Transaction Data:", registrationData)
+				log.Debug("Node Registration Transaction Data:", registrationData)
 
 			default:
 				log.Error("Unknown transaction type")
@@ -201,39 +170,6 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 
 		}
 	}
-
-	// Invalid transactions get included in blocks just like valid transactions do so checking here is basically pointless!
-
-	//for i := range req.Txs {
-	//	// if code := app.isValid(tx); code != 0 {
-	//	// 	log.Warn("Error: invalid transaction index %v", i)
-	//	// 	txs[i] = &abcitypes.ExecTxResult{Code: code}
-	//	// } else {
-	//	// 	// This is just one type of transaction.
-
-	//	// 	// parts := bytes.SplitN(tx, []byte("="), 2)
-	//	// 	// key, value := parts[0], parts[1]
-	//	// 	// log.Info("Adding key %s with value %s", key, value)
-
-	//	// 	// if err := app.onGoingBlock.Set(key, value); err != nil {
-	//	// 	// 	log.Panicf("Error writing to database, unable to execute tx: %v", err)
-	//	// 	// }
-
-	//	// 	// log.Info("Successfully added key %s with value %s", key, value)
-
-	//	// 	// Accept all transactions that are valid! But don't store them lmao
-
-	//	// 	txs[i] = &abcitypes.ExecTxResult{}
-	//	// 	log.Error("THIS RAN ", testval, testval%2)
-	//	// }
-
-	//	// Need a different mechanism for the transactions that bring verification data.
-	//	// Roughly:
-	//	//	- Make sure the transaction itself is solid.
-	//	//	- Sort by source then by rank.
-	//	//	- Highest ranked transactions are marked for storage, the rest are discarded.
-	//	//	- Store on here?
-	//}
 
 	// Select sources pseudo-randomly.
 	{
@@ -446,4 +382,36 @@ func (app *VerificationApp) handleVerificationTransaction(tx types.VerificationT
 
 func (app *VerificationApp) handleResourceTransaction(tx types.ResourceTransactionData) uint32 {
 	return 0
+}
+
+func (app VerificationApp) Commit(_ context.Context, commit *abcitypes.RequestCommit) (*abcitypes.ResponseCommit, error) {
+	return &abcitypes.ResponseCommit{}, app.onGoingBlock.Commit()
+}
+
+func (app *VerificationApp) ListSnapshots(_ context.Context, snapshots *abcitypes.RequestListSnapshots) (*abcitypes.ResponseListSnapshots, error) {
+	return &abcitypes.ResponseListSnapshots{}, nil
+}
+
+func (app *VerificationApp) OfferSnapshot(_ context.Context, snapshot *abcitypes.RequestOfferSnapshot) (*abcitypes.ResponseOfferSnapshot, error) {
+	return &abcitypes.ResponseOfferSnapshot{}, nil
+}
+
+func (app *VerificationApp) LoadSnapshotChunk(_ context.Context, chunk *abcitypes.RequestLoadSnapshotChunk) (*abcitypes.ResponseLoadSnapshotChunk, error) {
+	return &abcitypes.ResponseLoadSnapshotChunk{}, nil
+}
+
+func (app *VerificationApp) ApplySnapshotChunk(_ context.Context, chunk *abcitypes.RequestApplySnapshotChunk) (*abcitypes.ResponseApplySnapshotChunk, error) {
+	return &abcitypes.ResponseApplySnapshotChunk{Result: abcitypes.ResponseApplySnapshotChunk_ACCEPT}, nil
+}
+
+func (app VerificationApp) ExtendVote(_ context.Context, extend *abcitypes.RequestExtendVote) (*abcitypes.ResponseExtendVote, error) {
+	return &abcitypes.ResponseExtendVote{}, nil
+}
+
+func (app *VerificationApp) VerifyVoteExtension(_ context.Context, verify *abcitypes.RequestVerifyVoteExtension) (*abcitypes.ResponseVerifyVoteExtension, error) {
+	return &abcitypes.ResponseVerifyVoteExtension{}, nil
+}
+
+func (app *VerificationApp) Info(_ context.Context, info *abcitypes.RequestInfo) (*abcitypes.ResponseInfo, error) {
+	return &abcitypes.ResponseInfo{}, nil
 }
