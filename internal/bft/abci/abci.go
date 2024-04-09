@@ -90,7 +90,7 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 
 	app.onGoingBlock = app.db.NewTransaction(true)
 	var validatorupdates = make([]abcitypes.ValidatorUpdate, 0, len(req.Txs))
-	app.onGoingBlock = app.db.NewTransaction(true)
+
 	for i, tx := range req.Txs {
 		if code := app.isValid(tx); code != 0 {
 			log.Error("Error: invalid transaction index %v", i)
@@ -157,7 +157,6 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 			case types.TransactionType_NodeRegistrationTransaction:
 				registrationData := &types.NodeRegistrationTransactionData{}
 				registrationData = transaction.GetNodeRegistrationData()
-				log.Debug("Resource Transaction Data:", registrationData)
 				publicKeyString := registrationData.GetNodeAddress()
 				pubKeyBytes, err := base64.StdEncoding.DecodeString(publicKeyString)
 				if err != nil {
@@ -192,7 +191,7 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 					Power:  10,
 				}
 				validatorupdates = append(validatorupdates, *validatorup)
-				log.Debug("Resource Transaction Data:", registrationData)
+				log.Debug("Resource Transaction Data after validator:", registrationData)
 
 			default:
 				log.Error("Unknown transaction type")
@@ -342,7 +341,8 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 	}
 
 	return &abcitypes.ResponseFinalizeBlock{
-		TxResults: txs,
+		TxResults:        txs,
+		ValidatorUpdates: validatorupdates,
 	}, nil
 }
 
@@ -375,6 +375,7 @@ func (app *VerificationApp) isValid(tx []byte) uint32 {
 	// check format
 	var transaction types.Transaction
 	err := proto.Unmarshal(tx, &transaction)
+	log.Debug("the tx type is", transaction.Type)
 	if err != nil {
 		log.Error("Error unmarshaling transaction data:", err)
 		return 1
@@ -397,6 +398,17 @@ func (app *VerificationApp) isValid(tx []byte) uint32 {
 		resourceData = transaction.GetResourceData()
 		log.Info("Resource Transaction Data:", resourceData)
 		return 0
+	case types.TransactionType_NodeRegistrationTransaction:
+		nodeRegistrationData := &types.NodeRegistrationTransactionData{}
+		nodeRegistrationData = transaction.GetNodeRegistrationData()
+
+		if nodeRegistrationData == nil {
+			log.Error("Error unmarshaling resource transaction data:", err)
+			return 1
+		}
+		log.Debug("Resource Transaction Data:", nodeRegistrationData)
+		return 0
+
 	default:
 		log.Error("Unknown transaction type")
 		return 1
