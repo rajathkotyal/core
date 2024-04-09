@@ -6,7 +6,7 @@ p2p:
   groupName: xnode
   peerLimit: 50
 bft:
-  homeDir: /tmp/cometbft-home
+  homeDir: default-cometbft-home
 db:
   username: username
   password: password
@@ -30,3 +30,7 @@ log:
     maxSize: 10
     maxAge: 7
     maxBackups: 10
+nft:
+  trackerData: ./default-cometbft-home/data/nft-tracked
+  rpcAddress: https://rpc.ankr.com/eth_sepolia
+  unlimitedRPC: false

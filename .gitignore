@@ -9,6 +9,7 @@
 *.dylib
 
 openmesh-core
+core
 
 # Test binary, built with `go test -c`
 *.test
@@ -39,6 +40,11 @@ default-cometbft-home/config/priv_validator_key.json
 executable-file
 /ignore
 log.txt
+
+# Default cometbft state (config.toml is important)
+/default-cometbft-home/data
+/default-cometbft-home/config/node_key.json
+/default-cometbft-home/config/priv_validator_key.json
 
 # Get rid of logs
 logs

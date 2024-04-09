@@ -1,1 +1,1 @@
-cometbft init --home /tmp/cometbft-home
+cometbft init --home ./default-cometbft-home
