@@ -15,10 +15,9 @@ type Request struct {
 }
 
 type Summary struct {
-	Request Request
 	// XXX: This might not be efficient, array of pointers means many cache misses.
 	// Not sure if the Go compiler will realize we want these sequentially in memory.
-	// But whatever man we're doing like 1-5 of these a second.
+	// But whatever man we're only doing a handfull of these a second.
 	DataHashes []cid.Cid
 }
 
@@ -34,17 +33,17 @@ type CollectorWorker struct {
 
 type CollectorInstance struct {
 	ctx                       context.Context
-	workers                   [CONNECTIONS_MAX]CollectorWorker
+	workers                   [WORKER_COUNT]CollectorWorker
 	workerWaitGroup           conc.WaitGroup
 	requestsByPriorityCurrent []Request
 	requestsByPriorityNew     []Request
-	summariesNew              [CONNECTIONS_MAX]Summary
-	summariesOld              [CONNECTIONS_MAX]Summary
+	summariesNew              [WORKER_COUNT]Summary
+	summariesOld              [WORKER_COUNT]Summary
 	subscriptionsContext      context.Context
 	subscriptionsCancel       context.CancelFunc
 }
 
-const CONNECTIONS_MAX = 1
+const WORKER_COUNT = 1
 
 // const BUFFER_SIZE_MAX = 1024
 // const BUFFER_MAX = 1024
@@ -72,32 +71,56 @@ func (ci *CollectorInstance) SubmitRequests(requestsSortedByPriority []Request) 
 		ci.workers[i].pause <- true
 	}
 
-	// Now the old summaries are up to date.
-	copy(ci.summariesOld[:], ci.summariesNew[:])
-
-	log.Info("Subscribing to requests.")
-	for i := 0; i < min(len(ci.workers), len(requestsSortedByPriority)); i++ {
-		r := requestsSortedByPriority[i]
-
-		// Subscribe to new source.
-		// TODO: If a worker is already subscribed to a source don't end the subscription.
-		// Significant rewrite, but might improve performance.
-		log.Info("Subscribing ", i)
-		messageChannel, err := Subscribe(ci.subscriptionsContext, r.Source, r.Source.Topics[r.Topic])
-		if err != nil {
-			// XXX: Handle this case by skipping this request.
-			// Panicking now to highlight this.
-			panic(err)
-		}
-
-		ci.workers[i].summary.Request = r
-		ci.workers[i].message = messageChannel
+	for i := range ci.workers {
+		// Wait until they've finished.
+		<-ci.workers[i].pause
 	}
 
+	// Now the old summaries are up to date.
+	copy(ci.summariesOld[:], ci.summariesNew[:])
+	for i := range ci.summariesNew {
+		// XXX: Test if this actually allocates memory or if Go compiler understands I want the same buffer basically.
+		ci.summariesOld[i].DataHashes = make([]cid.Cid, len(ci.summariesNew[i].DataHashes))
+		copy(ci.summariesOld[i].DataHashes, ci.summariesNew[i].DataHashes)
+	}
+
+	log.Info("Subscribing to requests.")
+
+	// NOTE: I only multithread this bit because its the slowest, all the other sections of this run pretty quickly
+	// so there's no reason to multithread them.
+	subscribeWaitGroup := conc.NewWaitGroup()
+	for i := 0; i < min(len(ci.workers), len(requestsSortedByPriority)); i++ {
+
+		// Have to declare variable here otherwise go will pass i as value and cause problems.
+		index := i
+		subscribeFunc := func() {
+			r := requestsSortedByPriority[index]
+
+			// Subscribe to new source.
+			// TODO: If a worker is already subscribed to a source don't end the subscription.
+			// Significant rewrite, but might improve performance.
+
+			log.Info("Subscribing ", index)
+			messageChannel, err := Subscribe(ci.subscriptionsContext, r.Source, r.Source.Topics[r.Topic])
+			if err != nil {
+				// XXX: Handle this case by skipping this request.
+				// Panicking now to highlight this.
+				panic(err)
+			}
+
+			ci.workers[index].message = messageChannel
+		}
+
+		subscribeWaitGroup.Go(subscribeFunc)
+	}
+	subscribeWaitGroup.Wait()
+
 	for i := range ci.workers {
-		// Now unpause.
 		log.Info("Resuming ", i)
 		ci.workers[i].resume <- true
+	}
+	for i := range ci.workers {
+		<-ci.workers[i].resume
 	}
 
 	maxSummaries := min(len(ci.summariesOld), len(requestsSortedByPriority))
@@ -114,7 +137,7 @@ func (cw *CollectorWorker) run(ctx context.Context, buffer []byte) {
 		panic("Buffer is too small, is this an error?")
 	}
 
-	// XXX: Maybe implement this function in RP? Also it will crash if length == 0
+	// XXX: Maybe move this function to RP? Also it will crash if length == 0
 	// Also I could move this to another function.
 	summaryAppend := func(summary *Summary, buffer []byte, length int) {
 		// TODO: Consider adding:
@@ -135,7 +158,8 @@ func (cw *CollectorWorker) run(ctx context.Context, buffer []byte) {
 		}
 
 		summary.DataHashes = append(summary.DataHashes, c)
-		log.Info("Added ", length, "  bytes, now: "+c.String())
+
+		log.Info("Added ", length, "  bytes, now: ", c.String())
 	}
 
 	bufferOffset := 0
@@ -143,66 +167,75 @@ func (cw *CollectorWorker) run(ctx context.Context, buffer []byte) {
 	paused := false
 	log.Info("Running for loop.")
 	for {
-		log.Info("Polling.")
-		if paused {
-			select {
-			case <-ctx.Done():
-				// XXX: This is duplicated, not sure if there's a simple way to handle this.
-				log.Info("Context cancelled.")
-				return
-			case <-cw.resume:
-				log.Info("Worker resumed.")
-				paused = false
-				break
-			}
-		} else {
-			select {
-			case <-ctx.Done():
-				log.Info("Context cancelled.")
-				return
-			case <-cw.pause:
-				log.Info("Channel stopped.")
+		select {
+		case <-ctx.Done():
+			log.Info("Context cancelled.")
+			return
+		default:
+			if paused {
+				select {
+				case <-cw.resume:
+					log.Info("Worker resumed.")
+					// Clear the summary cid buffer.
+					cw.summary.DataHashes = cw.summary.DataHashes[:0]
+					paused = false
 
-				// Flush the buffer!
-				if len(buffer) > 0 {
-					summaryAppend(cw.summary, buffer, len(buffer))
+					// Tell collector we're done resuming.
+					cw.resume <- true
 				}
+			} else {
+				select {
+				case <-cw.pause:
+					log.Info("Channel stopped.")
 
-				// Wait until resume.
-				log.Info("Worker paused until resume is called.")
-				paused = true
-				break
-			case message := <-cw.message:
-				// XXX: This looks ugly, whatever.
-				if len(message) == 0 {
-					if !printedDebug {
-						log.Info("Got message with length 0, that means we probs disconnected :(")
+					// Flush the buffer!
+					if len(buffer) > 0 {
+						log.Info("Flushed")
+						summaryAppend(cw.summary, buffer, len(buffer))
 					}
-					printedDebug = true
-					break
-				}
 
-				if bufferOffset+len(message) > len(buffer) {
-
-					// TODO: Add to Resource Pool at this stage?
-					summaryAppend(cw.summary, buffer, bufferOffset)
+					// Hopefully go will just call memset here...
+					for i := range buffer {
+						buffer[i] = 0
+					}
 					bufferOffset = 0
+
+					log.Info("Worker paused until resume is called.")
+					paused = true
+
+					// Tell collector we've finished pausing.
+					cw.pause <- true
+				case message := <-cw.message:
+					// XXX: This looks ugly, whatever.
+					if len(message) == 0 {
+						if !printedDebug {
+							log.Info("Got message with length 0, that means we probs disconnected :(")
+						}
+						printedDebug = true
+						break
+					}
+
+					if bufferOffset+len(message) > len(buffer) {
+						// TODO: Add to Resource Pool from here?
+						summaryAppend(cw.summary, buffer, bufferOffset)
+						bufferOffset = 0
+					}
+
+					// If the message still doesn't fit, divide it into chunks and add it until it fits.
+					for len(message) > len(buffer) {
+						// XXX: Should the cids we post be capped at the length of the buffer?
+						// Or can they be any size? For now I assume they are capped at the size of the buffer.
+						// Do we do padding? Need a spreadsheet to "empirically" test this.
+						summaryAppend(cw.summary, message, len(buffer))
+						message = message[len(buffer):]
+					}
+
+					// Add message to buffer.
+					copy(buffer[bufferOffset:], message)
+					// log.Info("Done here.")
+
+					bufferOffset += len(message)
 				}
-
-				// If the message still doesn't fit, divide it into chunks and add it until it fits.
-				for len(message) > len(buffer) {
-					// XXX: Should the cids we post be capped at the length of the buffer?
-					// Or can they be any size? For now I assume they are capped at the size of the buffer.
-					// Do we do padding? Need a spreadsheet to "empirically" test this.
-					summaryAppend(cw.summary, message, len(buffer))
-					message = message[len(buffer):]
-				}
-
-				// Add message to buffer.
-				copy(buffer[bufferOffset:], message)
-				// log.Info("Done here.")
-
-				bufferOffset += len(message)
 			}
 		}
 	}
@@ -218,7 +251,9 @@ func (ci *CollectorInstance) Start(ctx context.Context) {
 		ci.workers[i].resume = make(chan bool)
 		ci.workers[i].message = make(chan []byte)
 		ci.workers[i].summary = &ci.summariesNew[i]
-		runFunc := func() { ci.workers[i].run(ci.ctx, buffer) }
+
+		index := i
+		runFunc := func() { ci.workers[index].run(ci.ctx, buffer) }
 
 		log.Infof("Deploying worker for collector.")
 		ci.workerWaitGroup.Go(runFunc)
