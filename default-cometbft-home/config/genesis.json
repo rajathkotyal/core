@@ -1,6 +1,6 @@
 {
-  "genesis_time": "2024-04-03T06:11:11.933915661Z",
-  "chain_id": "test-chain-uvl9Hl",
+  "genesis_time": "2024-05-30T00:00:00Z",
+  "chain_id": "openmesh-testnet",
   "initial_height": "0",
   "consensus_params": {
     "block": {
@@ -31,7 +31,7 @@
         "type": "tendermint/PubKeyEd25519",
         "value": "TobZpplVsUR2nhHSm7bb79CHiUf4sTzaEpGrZ7Fk6q4="
       },
-      "power": "10",
+      "power": "1",
       "name": ""
     }
   ],
