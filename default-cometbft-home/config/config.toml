@@ -206,10 +206,10 @@ laddr = "tcp://127.0.0.1:26656"
 external_address = ""
 
 # Comma separated list of seed nodes to connect to
-seeds = "genesisaddress@ip"
+seeds = ""
 
 # Comma separated list of nodes to keep persistent connections to
-persistent_peers = "cometvalopt93t08h2t20fgofjku@192.168.0.1:18081, "
+persistent_peers = ""
 
 # Path to address book
 addr_book_file = "config/addrbook.json"
