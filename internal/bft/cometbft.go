@@ -31,12 +31,13 @@ import (
 
 // Instance is the CometBFT instance
 type Instance struct {
-	Config    *cfg.Config
-	Addr      []byte
-	BftNode   *nm.Node
-	Collector *collector.CollectorInstance
-	app       *abci.VerificationApp
-	collector *collector.CollectorInstance
+	Config     *cfg.Config
+	Addr       []byte
+	BftNode    *nm.Node
+	Collector  *collector.CollectorInstance
+	app        *abci.VerificationApp
+	collector  *collector.CollectorInstance
+	FullPubKey []byte
 }
 
 // NewInstance initialise a CometBFT instance use the config specified
@@ -103,14 +104,15 @@ func NewInstance(db *badger.DB, collector *collector.CollectorInstance) (*Instan
 	}
 
 	temp := sha256.Sum256(publicKey.Bytes())
-	return &Instance{Config: conf, BftNode: node, app: app, collector: collector, Addr: temp[:20]}, nil
+	InstancePub := publicKey.Bytes()
+	return &Instance{Config: conf, BftNode: node, app: app, collector: collector, Addr: temp[:20], FullPubKey: InstancePub}, nil
 }
 
 // Start the CometBFT node
 func (inst *Instance) Start(ctx context.Context) {
 	eventBus := inst.BftNode.EventBus()
 
-	base64AddrString := base64.StdEncoding.EncodeToString(inst.Addr)
+	base64AddrString := base64.StdEncoding.EncodeToString(inst.FullPubKey)
 
 	newBlock, err := eventBus.Subscribe(ctx, "mainId", types.EventQueryNewBlock)
 	if err != nil {
@@ -166,7 +168,7 @@ func (inst *Instance) Start(ctx context.Context) {
 						panic(err)
 					}
 					log.Debug("Succesfully pushed transaction!")
-					
+
 					registered = true
 				} else {
 					for i := 0; i < collector.WORKER_COUNT; i++ {
