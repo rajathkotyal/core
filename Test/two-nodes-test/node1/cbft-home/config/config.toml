@@ -19,7 +19,7 @@ version = "0.38.6"
 proxy_app = "tcp://127.0.0.1:26658"
 
 # A custom human readable name for this node
-moniker = "zbook"
+moniker = "harsh-virtual-machine"
 
 # Database backend: goleveldb | cleveldb | boltdb | rocksdb | badgerdb
 # * goleveldb (github.com/syndtr/goleveldb - most popular implementation)
@@ -198,7 +198,7 @@ pprof_laddr = ""
 [p2p]
 
 # Address to listen for incoming connections
-laddr = "tcp://0.0.0.0:26656"
+laddr = "tcp://127.0.0.1:26656"
 
 # Address to advertise to peers for them to dial. If empty, will use the same
 # port as the laddr, and will introspect on the listener to figure out the

@@ -32,10 +32,6 @@ go.work
 # Secrets & blockchain data
 /collector/.env
 
-cbft-home/
-!cbft-home/config/config.toml
-
-
 # Arbitrary trashes
 .DS_Store
 executable-file
