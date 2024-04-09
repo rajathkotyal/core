@@ -5,8 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
-	"fmt"
 	"math/rand"
 	"time"
 
@@ -99,9 +97,11 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 			txs[i] = &abcitypes.ExecTxResult{Code: code}
 		} else {
 			var transaction types.Transaction
-			hexString := string(tx)
-			tx, _ = hex.DecodeString(hexString)
+			// hexString := string(tx)
+			// tx, _ = hex.DecodeString(hexString)
+			log.Debug("Transaction hex ", string(tx))
 			err := proto.Unmarshal(tx, &transaction)
+			log.Debug("Transaction hex ", transaction.Type.Number())
 			if err != nil {
 				log.Error("Error unmarshaling transaction data:", err)
 				txs[i] = &abcitypes.ExecTxResult{Code: 1}
@@ -374,8 +374,6 @@ func (app *VerificationApp) Query(_ context.Context, req *abcitypes.RequestQuery
 func (app *VerificationApp) isValid(tx []byte) uint32 {
 	// check format
 	var transaction types.Transaction
-	hexString := string(tx)
-	tx, _ = hex.DecodeString(hexString)
 	err := proto.Unmarshal(tx, &transaction)
 	if err != nil {
 		log.Error("Error unmarshaling transaction data:", err)
@@ -387,17 +385,17 @@ func (app *VerificationApp) isValid(tx []byte) uint32 {
 	case types.TransactionType_NormalTransaction:
 		normalData := &types.NormalTransactionData{}
 		normalData = transaction.GetNormalData()
-		fmt.Println("Normal Transaction Data:", normalData)
+		log.Info("Normal Transaction Data:", normalData)
 		return 0
 	case types.TransactionType_VerificationTransaction:
 		verificationData := &types.VerificationTransactionData{}
 		verificationData = transaction.GetVerificationData()
-		fmt.Println("Verification Transaction Data:", verificationData)
+		log.Info("Verification Transaction Data:", verificationData)
 		return 0
 	case types.TransactionType_ResourceTransaction:
 		resourceData := &types.ResourceTransactionData{}
 		resourceData = transaction.GetResourceData()
-		fmt.Println("Resource Transaction Data:", resourceData)
+		log.Info("Resource Transaction Data:", resourceData)
 		return 0
 	default:
 		log.Error("Unknown transaction type")
