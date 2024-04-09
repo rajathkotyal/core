@@ -117,6 +117,8 @@ func (inst *Instance) Start(ctx context.Context) {
 		panic(err)
 	}
 
+	registered := false
+
 	// Event handler
 	go func() {
 		for {
@@ -128,26 +130,19 @@ func (inst *Instance) Start(ctx context.Context) {
 				eventBus.UnsubscribeAll(ctx, "mainId")
 				return
 			case <-newBlock.Out():
-				for i := 0; i < collector.WORKER_COUNT; i++ {
-					// Format as a transactionMessage
+				// If not connected, then connect!
+				if !registered {
+					// Send transaction to register.
 					transactionMessage := otypes.Transaction{
 						Owner:     base64AddrString,
 						Signature: "",
-						Type:      *otypes.TransactionType_VerificationTransaction.Enum(),
-					}
-
-					// Build some dataset.
-					transactionMessage.Data = &otypes.Transaction_VerificationData{
-						VerificationData: &otypes.VerificationTransactionData{
-							// XXX: Actually provide attestation here.
-							Attestation: "",
-							// XXX: Need to decide how we're building the cids.
-							// There's a tradeoff between blockchain size and download speed.
-							// Make a fake but plausible CID
-							Cid:        base64.StdEncoding.EncodeToString(rand.Bytes(40)),
-							Datasource: "examplesource" + "-" + "exampletopic",
-							// XXX: Should this be the time it started being recorded or ended?
-							Timestamp: time.Now().Unix(),
+						Type:      *otypes.TransactionType_NodeRegistrationTransaction.Enum(),
+						Data: &otypes.Transaction_NodeRegistrationData{
+							NodeRegistrationData: &otypes.NodeRegistrationTransactionData{
+								NodeAddress:     base64AddrString,
+								NodeAttestation: "",
+								NodeSignature:   "",
+							},
 						},
 					}
 
@@ -164,13 +159,60 @@ func (inst *Instance) Start(ctx context.Context) {
 						panic(err)
 					}
 
-					log.Debug("Pushing transaction with hash: ", sha256.Sum256(transactionBytes))
+					log.Debug("Pushing registration transaction with hash: ", sha256.Sum256(transactionBytes))
 					_, err = env.BroadcastTxAsync(&rpctypes.Context{}, transaction)
 
 					if err != nil {
 						panic(err)
 					}
 					log.Debug("Succesfully pushed transaction!")
+					
+					registered = true
+				} else {
+					for i := 0; i < collector.WORKER_COUNT; i++ {
+						// Format as a transactionMessage
+						transactionMessage := otypes.Transaction{
+							Owner:     base64AddrString,
+							Signature: "",
+							Type:      *otypes.TransactionType_VerificationTransaction.Enum(),
+						}
+
+						// Build some dataset.
+						transactionMessage.Data = &otypes.Transaction_VerificationData{
+							VerificationData: &otypes.VerificationTransactionData{
+								// XXX: Actually provide attestation here.
+								Attestation: "",
+								// XXX: Need to decide how we're building the cids.
+								// There's a tradeoff between blockchain size and download speed.
+								// Make a fake but plausible CID
+								Cid:        base64.StdEncoding.EncodeToString(rand.Bytes(40)),
+								Datasource: "examplesource" + "-" + "exampletopic",
+								// XXX: Should this be the time it started being recorded or ended?
+								Timestamp: time.Now().Unix(),
+							},
+						}
+
+						transactionBytes, err := proto.Marshal(&transactionMessage)
+						if err != nil {
+							panic(err)
+						}
+
+						transaction := types.Tx(transactionBytes[:])
+
+						env, err := inst.BftNode.ConfigureRPC()
+
+						if err != nil {
+							panic(err)
+						}
+
+						log.Debug("Pushing transaction with hash: ", sha256.Sum256(transactionBytes))
+						_, err = env.BroadcastTxAsync(&rpctypes.Context{}, transaction)
+
+						if err != nil {
+							panic(err)
+						}
+						log.Debug("Succesfully pushed transaction!")
+					}
 				}
 			}
 		}
