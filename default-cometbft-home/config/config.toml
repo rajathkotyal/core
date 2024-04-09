@@ -198,7 +198,7 @@ pprof_laddr = ""
 [p2p]
 
 # Address to listen for incoming connections
-laddr = "tcp://0.0.0.0:26656"
+laddr = "tcp://127.0.0.1:26656"
 
 # Address to advertise to peers for them to dial. If empty, will use the same
 # port as the laddr, and will introspect on the listener to figure out the
@@ -206,10 +206,10 @@ laddr = "tcp://0.0.0.0:26656"
 external_address = ""
 
 # Comma separated list of seed nodes to connect to
-seeds = ""
+seeds = "genesisaddress@ip"
 
 # Comma separated list of nodes to keep persistent connections to
-persistent_peers = ""
+persistent_peers = "cometvalopt93t08h2t20fgofjku@192.168.0.1:18081, "
 
 # Path to address book
 addr_book_file = "config/addrbook.json"
