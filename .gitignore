@@ -31,20 +31,16 @@ go.work
 
 # Secrets & blockchain data
 /collector/.env
-cbft-home/data
-cbft-home/config/node_key.json
-cbft-home/config/priv_validator_key.json
+
+cbft-home/
+!cbft-home/config/config.toml
+
 
 # Arbitrary trashes
 .DS_Store
 executable-file
 /ignore
 log.txt
-
-# Default cometbft state (config.toml is important)
-/cbft-home/data
-/cbft-home/config/node_key.json
-/cbft-home/config/priv_validator_key.json
 
 # Get rid of logs
 logs
