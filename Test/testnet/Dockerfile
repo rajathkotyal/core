@@ -13,7 +13,9 @@ RUN ["mkdir", "/core/dump"]
 RUN ["mkdir", "/tmp/cometbft-home"]
 ADD default-cometbft-home /tmp/cometbft-home
 ADD ./entrypoint.sh /core/entrypoint.sh
+ADD ./bootstrap-entrypoint.sh /core/bootstrap-entrypoint.sh
 RUN ["chmod", "+x", "/core/entrypoint.sh"]
+RUN ["chmod", "+x", "/core/bootstrap-entrypoint.sh"]
 
 # Install CometBFT command for future operations
 # go install github.com/cometbft/cometbft/cmd/cometbft@latest

@@ -1,16 +1,36 @@
 version: '3'
 services:
-  xnode-validator:
+  core-bootstrap-validator:
+    image: openmesh-core-testnet:latest
+    deploy:
+      replicas: 1
+    ports:
+      - "26656"
+      - "26657"
+      - "26658"
+    volumes:
+      - ./config:/core/conf
+    networks:
+      network1:
+        ipv4_address: 192.168.20.2
+    entrypoint: [ 'sh', '/core/bootstrap-entrypoint.sh' ]
+  core-validator:
     image: openmesh-core-testnet:latest
     deploy:
       replicas: 2
     ports:
       - "26656"
+      - "26657"
+      - "26658"
     volumes:
       - ./config:/core/conf
     networks:
-      - network1
+    - network1
     entrypoint: [ 'sh', '/core/entrypoint.sh' ]
 networks:
   network1:
     driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: "192.168.20.0/24"
