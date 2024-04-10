@@ -1,0 +1,24 @@
+FROM golang:1.22-alpine
+
+# Add the core binary file to /core directory
+ADD ./openmesh-core /core/openmesh-core
+
+# Create directories for logs and configuration files
+RUN ["mkdir", "/core/logs"]
+RUN ["mkdir", "/core/conf"]
+RUN ["mkdir", "/core/dump"]
+
+# Make the default CometBFT home dir and add the physical one to the image
+# to make sure that all the config.toml and genesis.json are the same
+RUN ["mkdir", "/tmp/cometbft-home"]
+ADD default-cometbft-home /tmp/cometbft-home
+ADD ./entrypoint.sh /core/entrypoint.sh
+RUN ["chmod", "+x", "/core/entrypoint.sh"]
+
+# Install CometBFT command for future operations
+# go install github.com/cometbft/cometbft/cmd/cometbft@latest
+RUN ["go", "install", "github.com/cometbft/cometbft/cmd/cometbft@latest"]
+
+# Add a default entrypoint
+# This will be overwrite in docker-compose.yml
+ENTRYPOINT ["sh", "/core/entrypoint.sh"]
