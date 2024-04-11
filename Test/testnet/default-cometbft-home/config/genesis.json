@@ -1,6 +1,6 @@
 {
-  "genesis_time": "2024-04-10T04:23:04.145383Z",
-  "chain_id": "test-chain-qWkfhA",
+  "genesis_time": "2024-04-09T05:42:26.471505936Z",
+  "chain_id": "test-chain-VJHTwp",
   "initial_height": "0",
   "consensus_params": {
     "block": {
@@ -26,10 +26,10 @@
   },
   "validators": [
     {
-      "address": "96675E49F94DFD5FE6341E994B36C07CD5224469",
+      "address": "38922943C3508CBD3A7137A819D393306DA3D392",
       "pub_key": {
         "type": "tendermint/PubKeyEd25519",
-        "value": "VloJIKAyhnC+A49XmQJH+imXQoRBv7IQV+k0PNChcmw="
+        "value": "BmHmW9rBUgXbre5pX1c2bvSZJOkVQWU9DGbZStoZ4Dc="
       },
       "power": "10",
       "name": ""

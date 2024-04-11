@@ -19,7 +19,7 @@ version = "0.38.6"
 proxy_app = "tcp://127.0.0.1:26658"
 
 # A custom human readable name for this node
-moniker = "Adas-MacBook-Pro.local"
+moniker = "openmesh-virtual-machine"
 
 # Database backend: goleveldb | cleveldb | boltdb | rocksdb | badgerdb
 # * goleveldb (github.com/syndtr/goleveldb - most popular implementation)
@@ -198,7 +198,7 @@ pprof_laddr = ""
 [p2p]
 
 # Address to listen for incoming connections
-laddr = "tcp://0.0.0.0:26656"
+laddr = "tcp://127.0.0.1:26656"
 
 # Address to advertise to peers for them to dial. If empty, will use the same
 # port as the laddr, and will introspect on the listener to figure out the
@@ -209,7 +209,8 @@ external_address = ""
 seeds = ""
 
 # Comma separated list of nodes to keep persistent connections to
-persistent_peers = "538927808bbe633cc5dddfb1fe6fd7b3d62bd434@192.168.20.254:26656"
+# persistent_peers = "2a41ce3551fdf4dfdd2100b7ebb02538b7b7e996@192.168.20.30:26656"
+persistent_peers = "ca0dc3d9b7e168fd3135c1da56b4abc2e55bd04e@139.180.178.149:26656"
 
 # Path to address book
 addr_book_file = "config/addrbook.json"
@@ -255,7 +256,7 @@ seed_mode = false
 private_peer_ids = ""
 
 # Toggle to disable guard against peers connecting from the same ip.
-allow_duplicate_ip = false
+allow_duplicate_ip = true
 
 # Peer connection configuration.
 handshake_timeout = "20s"
