@@ -29,8 +29,6 @@ services:
     entrypoint: [ 'sh', '/core/entrypoint.sh' ]
 networks:
   network1:
-    driver: ipvlan
     ipam: 
-      driver: ipvlan
       config:
         - subnet: "192.168.20.0/24"
