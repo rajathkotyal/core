@@ -1,6 +1,7 @@
 package bft
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -28,6 +29,8 @@ import (
 	log "github.com/openmesh-network/core/internal/logger"
 	"github.com/spf13/viper"
 )
+
+var Max_Validator int = 99999
 
 // Instance is the CometBFT instance
 type Instance struct {
@@ -132,44 +135,63 @@ func (inst *Instance) Start(ctx context.Context) {
 				eventBus.UnsubscribeAll(ctx, "mainId")
 				return
 			case <-newBlock.Out():
+				env, err := inst.BftNode.ConfigureRPC()
+				if err != nil {
+					panic(err)
+				}
+
 				// If not connected, then connect!
 				if !registered {
-					// Send transaction to register.
-					transactionMessage := otypes.Transaction{
-						Owner:     base64AddrString,
-						Signature: "",
-						Type:      *otypes.TransactionType_NodeRegistrationTransaction.Enum(),
-						Data: &otypes.Transaction_NodeRegistrationData{
-							NodeRegistrationData: &otypes.NodeRegistrationTransactionData{
-								NodeAddress:     base64AddrString,
-								NodeAttestation: "",
-								NodeSignature:   "",
+					res, err := env.Status(&rpctypes.Context{})
+					if err != nil {
+						panic(err)
+					}
+
+					// Now you can access the fields of the ResultStatus struct
+					var cur_page int = 1
+					var already_registered bool = false
+					res2, err := env.Validators(&rpctypes.Context{}, &res.SyncInfo.LatestBlockHeight, &cur_page, &Max_Validator)
+					if err != nil {
+						panic(err)
+					}
+					for i := 0; i < len(res2.Validators); i++ {
+						keybytes := res2.Validators[i].PubKey.Bytes()
+						if bytes.Equal(keybytes, inst.FullPubKey) {
+							already_registered = true
+							registered = true
+						}
+					}
+					if !already_registered {
+						transactionMessage := otypes.Transaction{
+							Owner:     base64AddrString,
+							Signature: "",
+							Type:      *otypes.TransactionType_NodeRegistrationTransaction.Enum(),
+							Data: &otypes.Transaction_NodeRegistrationData{
+								NodeRegistrationData: &otypes.NodeRegistrationTransactionData{
+									NodeAddress:     base64AddrString,
+									NodeAttestation: "",
+									NodeSignature:   "",
+								},
 							},
-						},
-					}
+						}
 
-					transactionBytes, err := proto.Marshal(&transactionMessage)
-					if err != nil {
-						panic(err)
-					}
+						transactionBytes, err := proto.Marshal(&transactionMessage)
+						if err != nil {
+							panic(err)
+						}
 
-					transaction := types.Tx(transactionBytes[:])
+						transaction := types.Tx(transactionBytes[:])
 
-					env, err := inst.BftNode.ConfigureRPC()
+						log.Debug("Pushing registration transaction with hash: ", sha256.Sum256(transactionBytes))
+						_, err = env.BroadcastTxAsync(&rpctypes.Context{}, transaction)
 
-					if err != nil {
-						panic(err)
-					}
-
-					log.Debug("Pushing registration transaction with hash: ", sha256.Sum256(transactionBytes))
-					_, err = env.BroadcastTxAsync(&rpctypes.Context{}, transaction)
-
-					if err != nil {
-						log.Error("Failed to push registration transaction: ", err)
-						// panic(err)
-					} else {
-						log.Debug("Succesfully pushed registration transaction!")
-						registered = true
+						if err != nil {
+							log.Error("Failed to push registration transaction: ", err)
+							// panic(err)
+						} else {
+							log.Debug("Succesfully pushed registration transaction!")
+							registered = true
+						}
 					}
 				} else {
 					transactionPushedCount := 0
@@ -237,4 +259,21 @@ func (i *Instance) Stop() error {
 	err := i.BftNode.Stop()
 	i.BftNode.Wait()
 	return err
+}
+
+func CompareBytes(keybytes, fullPubKey []byte) bool {
+	if len(keybytes) != len(fullPubKey) {
+		return false
+	}
+	for i := range keybytes {
+		if keybytes[i] != fullPubKey[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// Compare byte slices using bytes.Equal()
+func CompareBytesUsingEqual(keybytes, fullPubKey []byte) bool {
+	return bytes.Equal(keybytes, fullPubKey)
 }
