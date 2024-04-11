@@ -260,20 +260,3 @@ func (i *Instance) Stop() error {
 	i.BftNode.Wait()
 	return err
 }
-
-func CompareBytes(keybytes, fullPubKey []byte) bool {
-	if len(keybytes) != len(fullPubKey) {
-		return false
-	}
-	for i := range keybytes {
-		if keybytes[i] != fullPubKey[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// Compare byte slices using bytes.Equal()
-func CompareBytesUsingEqual(keybytes, fullPubKey []byte) bool {
-	return bytes.Equal(keybytes, fullPubKey)
-}
