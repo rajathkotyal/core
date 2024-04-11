@@ -3,7 +3,6 @@ package verificationApp
 import (
 	"context"
 	"encoding/base64"
-	"time"
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	"github.com/dgraph-io/badger/v3"
@@ -52,7 +51,6 @@ func (app *VerificationApp) ProcessProposal(_ context.Context, proposal *abcityp
 
 func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.RequestFinalizeBlock) (*abcitypes.ResponseFinalizeBlock, error) {
 	var txs = make([]*abcitypes.ExecTxResult, len(req.Txs))
-	log.Debug("Finalizing block ", time.Now().Unix())
 
 	app.onGoingBlock = app.db.NewTransaction(true)
 	var validatorupdates = make([]abcitypes.ValidatorUpdate, 0, len(req.Txs))

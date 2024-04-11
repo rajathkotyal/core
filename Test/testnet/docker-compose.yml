@@ -17,7 +17,7 @@ services:
   core-validator:
     image: openmesh-core-testnet:latest
     deploy:
-      replicas: 64
+      replicas: 4
     ports:
       - "26656"
       - "26657"

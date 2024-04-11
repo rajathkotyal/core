@@ -172,6 +172,7 @@ func (inst *Instance) Start(ctx context.Context) {
 						registered = true
 					}
 				} else {
+					transactionPushedCount := 0
 					for i := 0; i < collector.WORKER_COUNT; i++ {
 						// Format as a transactionMessage
 						transactionMessage := otypes.Transaction{
@@ -208,15 +209,16 @@ func (inst *Instance) Start(ctx context.Context) {
 							panic(err)
 						}
 
-						log.Debug("Pushing transaction with hash: ", sha256.Sum256(transactionBytes))
 						_, err = env.BroadcastTxAsync(&rpctypes.Context{}, transaction)
 
 						if err != nil {
 							log.Error("Couldn't push transaction, reason: ", err)
 							// panic(err)
+						} else {
+							transactionPushedCount++
 						}
-						log.Debug("Succesfully pushed transaction!")
 					}
+					log.Debug("Pushed ", transactionPushedCount, "/", collector.WORKER_COUNT)
 				}
 			}
 		}
