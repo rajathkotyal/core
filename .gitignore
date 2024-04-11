@@ -40,3 +40,6 @@ log.txt
 
 # Get rid of logs
 logs
+
+# Get rid of cbft-data
+/cbft-home
