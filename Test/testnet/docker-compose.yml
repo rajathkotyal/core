@@ -12,12 +12,12 @@ services:
       - ./config:/core/conf
     networks:
       network1:
-        ipv4_address: 192.168.20.2
+        ipv4_address: 192.168.20.254
     entrypoint: [ 'sh', '/core/bootstrap-entrypoint.sh' ]
   core-validator:
     image: openmesh-core-testnet:latest
     deploy:
-      replicas: 2
+      replicas: 64
     ports:
       - "26656"
       - "26657"

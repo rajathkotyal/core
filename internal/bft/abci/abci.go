@@ -59,15 +59,15 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 
 	for i, tx := range req.Txs {
 		if code := app.isValid(tx); code != 0 {
-			log.Error("Error: invalid transaction index %v", i)
+			// log.Error("Error: invalid transaction index %v", i)
 			txs[i] = &abcitypes.ExecTxResult{Code: code}
 		} else {
 			var transaction types.Transaction
 			// hexString := string(tx)
 			// tx, _ = hex.DecodeString(hexString)
-			log.Debug("Transaction hex ", string(tx))
+			// log.Debug("Transaction hex ", string(tx))
 			err := proto.Unmarshal(tx, &transaction)
-			log.Debug("Transaction hex ", transaction.Type.Number())
+			// log.Debug("Transaction hex ", transaction.Type.Number())
 			if err != nil {
 				log.Error("Error unmarshaling transaction data:", err)
 				txs[i] = &abcitypes.ExecTxResult{Code: 1}
@@ -77,7 +77,7 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 			case types.TransactionType_NormalTransaction:
 				normalData := &types.NormalTransactionData{}
 				normalData = transaction.GetNormalData()
-				log.Debug("Resource Transaction Data:", transaction)
+				// log.Debug("Resource Transaction Data:", transaction)
 				if normalData == nil {
 					log.Error("Error: Normal Data is nil %v", i)
 					txs[i] = &abcitypes.ExecTxResult{Code: 1}
@@ -88,7 +88,7 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 					txs[i] = &abcitypes.ExecTxResult{Code: 1}
 				}
 				txs[i] = &abcitypes.ExecTxResult{}
-				log.Debug("Normal Transaction Data:", normalData)
+				// log.Debug("Normal Transaction Data:", normalData)
 			case types.TransactionType_VerificationTransaction:
 				verificationData := &types.VerificationTransactionData{}
 				verificationData = transaction.GetVerificationData()
@@ -97,17 +97,17 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 					txs[i] = &abcitypes.ExecTxResult{Code: 1}
 				}
 				res := app.handleVerificationTransaction(*verificationData)
-				log.Debug("Handle transaction recieved")
+				// log.Debug("Handle transaction recieved")
 				if res != 0 {
 					log.Error("Error: invalid transaction index %v", i)
 					txs[i] = &abcitypes.ExecTxResult{Code: 1}
 				}
 				txs[i] = &abcitypes.ExecTxResult{}
-				log.Debug("Verification Transaction Data:", verificationData)
+				// log.Debug("Verification Transaction Data:", verificationData)
 			case types.TransactionType_ResourceTransaction:
 				resourceData := &types.ResourceTransactionData{}
 				resourceData = transaction.GetResourceData()
-				log.Debug("Resource Transaction Data:", transaction)
+				// log.Debug("Resource Transaction Data:", transaction)
 				if err != nil {
 					log.Error("Error: invalid transaction index %v", i)
 					txs[i] = &abcitypes.ExecTxResult{Code: 1}
@@ -118,12 +118,12 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 					txs[i] = &abcitypes.ExecTxResult{Code: 1}
 				}
 				txs[i] = &abcitypes.ExecTxResult{}
-				log.Debug("Resource Transaction Data:", resourceData)
+				// log.Debug("Resource Transaction Data:", resourceData)
 
 			case types.TransactionType_NodeRegistrationTransaction:
 				registrationData := &types.NodeRegistrationTransactionData{}
 				registrationData = transaction.GetNodeRegistrationData()
-				log.Debug("Node Registration Transaction Data:", registrationData)
+				// log.Debug("Node Registration Transaction Data:", registrationData)
 				publicKeyString := registrationData.GetNodeAddress()
 				pubKeyBytes, err := base64.StdEncoding.DecodeString(publicKeyString)
 				if err != nil {
@@ -158,7 +158,7 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 					Power:  10,
 				}
 				validatorupdates = append(validatorupdates, *validatorup)
-				log.Debug("Node Registration Transaction Data:", registrationData)
+				// log.Debug("Node Registration Transaction Data:", registrationData)
 
 			default:
 				log.Error("Unknown transaction type")
@@ -310,7 +310,7 @@ func (app *VerificationApp) isValid(tx []byte) uint32 {
 	// check format
 	var transaction types.Transaction
 	err := proto.Unmarshal(tx, &transaction)
-	log.Debug("the tx type is", transaction.Type)
+	// log.Debug("the tx type is", transaction.Type)
 	if err != nil {
 		log.Error("Error unmarshaling transaction data:", err)
 		return 1
@@ -319,19 +319,19 @@ func (app *VerificationApp) isValid(tx []byte) uint32 {
 	// Check the transaction type and handle accordingly
 	switch transaction.Type {
 	case types.TransactionType_NormalTransaction:
-		normalData := &types.NormalTransactionData{}
-		normalData = transaction.GetNormalData()
-		log.Info("Normal Transaction Data:", normalData)
+		// normalData := &types.NormalTransactionData{}
+		// normalData = transaction.GetNormalData()
+		// log.Info("Normal Transaction Data:", normalData)
 		return 0
 	case types.TransactionType_VerificationTransaction:
-		verificationData := &types.VerificationTransactionData{}
-		verificationData = transaction.GetVerificationData()
-		log.Info("Verification Transaction Data:", verificationData)
+		// verificationData := &types.VerificationTransactionData{}
+		// verificationData = transaction.GetVerificationData()
+		// log.Info("Verification Transaction Data:", verificationData)
 		return 0
 	case types.TransactionType_ResourceTransaction:
-		resourceData := &types.ResourceTransactionData{}
-		resourceData = transaction.GetResourceData()
-		log.Info("Resource Transaction Data:", resourceData)
+		// resourceData := &types.ResourceTransactionData{}
+		// resourceData = transaction.GetResourceData()
+		// log.Info("Resource Transaction Data:", resourceData)
 		return 0
 	case types.TransactionType_NodeRegistrationTransaction:
 		nodeRegistrationData := &types.NodeRegistrationTransactionData{}
@@ -341,7 +341,7 @@ func (app *VerificationApp) isValid(tx []byte) uint32 {
 			log.Error("Error unmarshaling resource transaction data:", err)
 			return 1
 		}
-		log.Debug("Resource Transaction Data:", nodeRegistrationData)
+		// log.Debug("Resource Transaction Data:", nodeRegistrationData)
 		return 0
 
 	default:

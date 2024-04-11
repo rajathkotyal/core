@@ -165,11 +165,12 @@ func (inst *Instance) Start(ctx context.Context) {
 					_, err = env.BroadcastTxAsync(&rpctypes.Context{}, transaction)
 
 					if err != nil {
-						panic(err)
+						log.Error("Failed to push registration transaction: ", err)
+						// panic(err)
+					} else {
+						log.Debug("Succesfully pushed registration transaction!")
+						registered = true
 					}
-					log.Debug("Succesfully pushed transaction!")
-
-					registered = true
 				} else {
 					for i := 0; i < collector.WORKER_COUNT; i++ {
 						// Format as a transactionMessage
@@ -211,7 +212,8 @@ func (inst *Instance) Start(ctx context.Context) {
 						_, err = env.BroadcastTxAsync(&rpctypes.Context{}, transaction)
 
 						if err != nil {
-							panic(err)
+							log.Error("Couldn't push transaction, reason: ", err)
+							// panic(err)
 						}
 						log.Debug("Succesfully pushed transaction!")
 					}
