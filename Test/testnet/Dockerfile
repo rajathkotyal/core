@@ -18,8 +18,9 @@ RUN ["chmod", "+x", "/core/entrypoint.sh"]
 RUN ["chmod", "+x", "/core/bootstrap-entrypoint.sh"]
 
 # Install CometBFT command for future operations
-# go install github.com/cometbft/cometbft/cmd/cometbft@latest
-RUN ["go", "install", "github.com/cometbft/cometbft/cmd/cometbft@latest"]
+ENV GOCACHE=/root/.cache/go-build
+RUN --mount=type=cache,target="/root/.cache/go-build" go install github.com/cometbft/cometbft/cmd/cometbft@latest
+# RUN ["go", "install", "github.com/cometbft/cometbft/cmd/cometbft@latest"]
 
 # Add a default entrypoint
 # This will be overwrite in docker-compose.yml
