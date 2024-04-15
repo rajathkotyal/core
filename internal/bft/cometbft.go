@@ -124,6 +124,7 @@ func (inst *Instance) Start(ctx context.Context) {
 
 	registered := false
 
+
 	// Event handler
 	go func() {
 		for {
