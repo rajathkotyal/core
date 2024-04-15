@@ -1,5 +1,13 @@
 # CometBFT Documents for Openmesh Core
 
+## Get Docker network IP address
+
+Run the following command inside the docker container:
+
+```shell
+hostname -i
+```
+
 ## Peer IDs
 
 ### Node Address ("uppercase id")
