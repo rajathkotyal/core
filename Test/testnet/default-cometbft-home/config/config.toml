@@ -46,7 +46,7 @@ db_backend = "goleveldb"
 db_dir = "data"
 
 # Output level for logging, including package level options
-log_level = ""
+log_level = "*:info"
 
 # Output format: 'plain' (colored text) or 'json'
 log_format = "plain"
@@ -206,13 +206,10 @@ laddr = "tcp://0.0.0.0:26656"
 external_address = ""
 
 # Comma separated list of seed nodes to connect to
-# seeds = "ca0dc3d9b7e168fd3135c1da56b4abc2e55bd04e@139.180.178.149:26656"
-seeds = "2112a1fed60fa35e4044e7b8f0aebdc8e6d91f86@192.168.20.251:26656"
+seeds = "2112a1fed60fa35e4044e7b8f0aebdc8e6d91f86@192.168.20.251:26656,25b3faef6582363de8cff40f39de734e9cbae5ac@192.168.20.252:26656,699ab3dcb9811b4183450e863b38207aa8c90742@192.168.20.253:26656,79c3cef441d2956f54229a8779acf56a8ad735fa@192.168.20.254:26656,33e3fbd718d0ad4cf85415d6075a024a5ec6096e@192.168.21.1:26656"
 
 
 # Comma separated list of nodes to keep persistent connections to
-# persistent_peers = "2a41ce3551fdf4dfdd2100b7ebb02538b7b7e996@192.168.20.250:26656"
-# persistent_peers = "ca0dc3d9b7e168fd3135c1da56b4abc2e55bd04e@139.180.178.149:26656"
 persistent_peers = ""
 
 # Path to address book
