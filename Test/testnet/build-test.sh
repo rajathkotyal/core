@@ -1,4 +1,8 @@
 #!/bin/bash
+
+export DOCKER_CLIENT_TIMEOUT=420
+export COMPOSE_HTTP_TIMEOUT=420
+
 # Build binary file and move it to test/bft
 if [ -d openmesh-core ]; then
   rm -f openmesh-core

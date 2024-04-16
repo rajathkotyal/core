@@ -18,8 +18,10 @@ RUN ["mkdir", "/tmp/cometbft-home"]
 ADD default-cometbft-home /tmp/cometbft-home
 ADD ./entrypoint.sh /core/entrypoint.sh
 ADD ./bootstrap-entrypoint.sh /core/bootstrap-entrypoint.sh
+ADD ./seeder-entrypoint.sh /core/seeder-entrypoint.sh
 RUN ["chmod", "+x", "/core/entrypoint.sh"]
 RUN ["chmod", "+x", "/core/bootstrap-entrypoint.sh"]
+RUN ["chmod", "+x", "/core/seeder-entrypoint.sh"]
 # RUN ["go", "install", "github.com/cometbft/cometbft/cmd/cometbft@latest"]
 
 # Add a default entrypoint

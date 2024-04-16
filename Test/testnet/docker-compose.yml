@@ -14,6 +14,20 @@ services:
       network1:
         ipv4_address: 192.168.20.250
     entrypoint: [ 'sh', '/core/bootstrap-entrypoint.sh' ]
+  core-seeder-validator:
+    image: openmesh-core-testnet:latest
+    deploy:
+      replicas: 1
+    ports:
+      - "26656"
+      - "26657"
+      - "26658"
+    volumes:
+      - ./config:/core/conf
+    networks:
+      network1:
+        ipv4_address: 192.168.20.251
+    entrypoint: [ 'sh', '/core/seeder-entrypoint.sh' ]
   core-validator:
     image: openmesh-core-testnet:latest
     deploy:
