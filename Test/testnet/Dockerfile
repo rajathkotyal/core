@@ -1,5 +1,9 @@
 FROM golang:1.22-alpine
 
+# Install CometBFT command for future operations
+ENV GOCACHE=/root/.cache/go-build
+RUN --mount=type=cache,target="/root/.cache/go-build" go install github.com/cometbft/cometbft/cmd/cometbft@latest
+
 # Add the core binary file to /core directory
 ADD ./openmesh-core /core/openmesh-core
 
@@ -16,10 +20,6 @@ ADD ./entrypoint.sh /core/entrypoint.sh
 ADD ./bootstrap-entrypoint.sh /core/bootstrap-entrypoint.sh
 RUN ["chmod", "+x", "/core/entrypoint.sh"]
 RUN ["chmod", "+x", "/core/bootstrap-entrypoint.sh"]
-
-# Install CometBFT command for future operations
-ENV GOCACHE=/root/.cache/go-build
-RUN --mount=type=cache,target="/root/.cache/go-build" go install github.com/cometbft/cometbft/cmd/cometbft@latest
 # RUN ["go", "install", "github.com/cometbft/cometbft/cmd/cometbft@latest"]
 
 # Add a default entrypoint

@@ -9,7 +9,7 @@ cp /tmp/cometbft-home/config/config.toml /core/default-cometbft-home/config/conf
 # Find ipv4 address
 ADDRESS="$(hostname -i):26656"
 
-# sed -i "s/external_address = \"\"/external_address = \"$ADDRESS\"/" /core/default-cometbft-home/config/config.toml
+sed -i "s/external_address = \"\"/external_address = \"$ADDRESS\"/" /core/default-cometbft-home/config/config.toml
 
 # Finally, the true entrypoint
 /core/openmesh-core --config /core/conf/config.yml
