@@ -21,7 +21,7 @@ import (
 
 // NOTE: Have to run sudo ip addr add 192.168.4.0/20 dev lo
 // NOTE: Will get rounded to a power of 2 for subnet to make sense - 2 for a seed node and a genesis node
-const NODE_COUNT = 8
+const NODE_COUNT = 10
 const DIR_BASE = "/tmp/test"
 const DIR_SHARED = DIR_BASE + "/shared"
 
@@ -179,7 +179,7 @@ func main() {
 			// Get the last person's info.
 			id := cbftGetId(DIR_BASE + "/node-" + strconv.Itoa(i-1) + "/cbft")
 
-			peerAddress := id + "@" + ipToString(ipCurrent-1) + "26656"
+			peerAddress := id + "@" + ipToString(ipCurrent-1) + ":26656"
 			configNode = strings.ReplaceAll(configNode, "{{ persistent_peers }}", peerAddress)
 		}
 		configNode = strings.ReplaceAll(configNode, "{{ seed_mode }}", "false")
