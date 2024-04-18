@@ -1,0 +1,308 @@
+package main
+
+// Notes(Tom):
+//	- Using cometbft cli since it is easier than importing the libraries for now.
+//	-
+
+// TODO:
+//	- Rename Genesis to boostrap to avoid confusion.
+//	- Allow configuration of subnet?
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"os/exec"
+	"os/signal"
+	"strconv"
+	"strings"
+	"syscall"
+)
+
+// NOTE: Have to run sudo ip addr add 192.168.4.0/20 dev lo
+// NOTE: Will get rounded to a power of 2 for subnet to make sense - 2 for a seed node and a genesis node
+const NODE_COUNT = 8
+const DIR_BASE = "/tmp/test"
+const DIR_SHARED = DIR_BASE + "/shared"
+
+// Won't necessarily be compatible with OS.
+// Made to work internally only.
+func ipToString(ip uint32) string {
+	ret := ""
+	ret += strconv.Itoa(int((ip >> 24) & 0xff))
+	ret += "."
+	ret += strconv.Itoa(int((ip >> 16) & 0xff))
+	ret += "."
+	ret += strconv.Itoa(int((ip >> 8) & 0xff))
+	ret += "."
+	ret += strconv.Itoa(int((ip >> 0) & 0xff))
+	return ret
+}
+
+// Won't necessarily be compatible with OS.
+// Made to work internally only.
+func ipToInt(ip string) uint32 {
+	chunks := strings.Split(ip, ".")
+
+	var ret uint32
+	a, _ := strconv.Atoi(chunks[3])
+	b, _ := strconv.Atoi(chunks[2])
+	c, _ := strconv.Atoi(chunks[1])
+	d, _ := strconv.Atoi(chunks[0])
+
+	ret = 0
+	ret |= uint32((a << 0))
+	ret |= uint32((b << 8))
+	ret |= uint32((c << 16))
+	ret |= uint32((d << 24))
+
+	return ret
+}
+
+func cbftInit(absoluteDirectory string) {
+	cmd := exec.Command("cometbft", "init", "--home", absoluteDirectory)
+	err := cmd.Run()
+	if err != nil {
+		panic(err)
+	}
+}
+
+func cbftGetId(absoluteDirectory string) string {
+	cmd := exec.Command("cometbft", "show-node-id", "--home", absoluteDirectory)
+	buf := new(bytes.Buffer)
+	cmd.Stderr = buf
+
+	out, err := cmd.Output()
+	if err != nil {
+		fmt.Println(buf.String())
+		panic(err)
+	}
+
+	return strings.ReplaceAll(string(out), "\n", "")
+}
+
+func main() {
+	// Check if cometbft command is installed?
+
+	// Subnet address.
+	const subnet = "192.168.4.0/20"
+
+	subnetIp := ipToInt("192.168.4.0")
+	fmt.Println("Running on ip", ipToString(subnetIp))
+	genesisNodeIp := subnetIp + 1
+	seedNodeIp := genesisNodeIp + 1
+
+	// Set up subnet.
+	{
+		// cmd := exec.Command("ip", "addr", "add", "192.168.4.0/20", "dev", "lo")
+		// err := cmd.Run()
+		// if err != nil {
+		// 	panic(err)
+		// }
+	}
+
+	// Load template config.
+	configTemplateBytes, err := os.ReadFile("config-template.toml")
+	configTemplate := string(configTemplateBytes)
+
+	if err != nil {
+		panic(err)
+	}
+
+	// Set up genesis node.
+	fmt.Println("Setting up configs")
+
+	// Set up seed node.
+	seedAddress := ""
+	seedDir := DIR_BASE + "/node-seed"
+	{
+		cbftInit(seedDir + "/cbft")
+		configSeed := strings.Clone(configTemplate)
+		configSeed = strings.ReplaceAll(configSeed, "{{ ip }}", ipToString(seedNodeIp))
+		configSeed = strings.ReplaceAll(configSeed, "{{ persistent_peers }}", "")
+		configSeed = strings.ReplaceAll(configSeed, "{{ seed_mode }}", "true")
+		configSeed = strings.ReplaceAll(configSeed, "{{ listen_prometheus }}", "false")
+		configSeed = strings.ReplaceAll(configSeed, "{{ seeds }}", "")
+
+		os.WriteFile(seedDir+"/cbft/config/config.toml", []byte(configSeed), 0o777)
+
+		seedAddress = cbftGetId(seedDir+"/cbft") + "@" + ipToString(seedNodeIp) + ":26656"
+		setupYamlConfig(seedDir)
+	}
+	fmt.Println("Wrote seed node config")
+
+	genesisFile := ""
+	genesisDir := DIR_BASE + "/node-genesis"
+	{
+		// Generate keys.
+		// Get a copy of the public id.
+		// Actually just steal genesis.json and paste on other nodes.
+
+		cbftInit(genesisDir + "/cbft")
+
+		// Paste config and replace values.
+		configGenesis := strings.Clone(configTemplate)
+		configGenesis = strings.ReplaceAll(configGenesis, "{{ ip }}", ipToString(genesisNodeIp))
+		configGenesis = strings.ReplaceAll(configGenesis, "{{ persistent_peers }}", "")
+		configGenesis = strings.ReplaceAll(configGenesis, "{{ seed_mode }}", "false")
+		configGenesis = strings.ReplaceAll(configGenesis, "{{ listen_prometheus }}", "true")
+		configGenesis = strings.ReplaceAll(configGenesis, "{{ seeds }}", seedAddress)
+
+		os.WriteFile(genesisDir+"/cbft/config/config.toml", []byte(configGenesis), 0o777)
+
+		genesisFileBytes, err := os.ReadFile(genesisDir + "/cbft/config/genesis.json")
+		if err != nil {
+			panic(err)
+		}
+
+		setupYamlConfig(genesisDir)
+		genesisFile = string(genesisFileBytes)
+	}
+	fmt.Println("Wrote genesis node config")
+
+	// Copy the genesis file to the seed node.
+	os.WriteFile(seedDir+"/cbft/config/genesis.json", []byte(genesisFile), 0o777)
+	ipCurrent := seedNodeIp + 1
+
+	for i := 0; i < NODE_COUNT; i++ {
+		nodeDir := DIR_BASE + "/node-" + strconv.Itoa(i)
+		cbftInit(nodeDir + "/cbft")
+
+		// Paste config and replace values.
+		configNode := strings.Clone(configTemplate)
+		configNode = strings.ReplaceAll(configNode, "{{ ip }}", ipToString(ipCurrent))
+
+		// Set up a persistent peer?
+		if i == 0 {
+			configNode = strings.ReplaceAll(configNode, "{{ persistent_peers }}", "")
+		} else {
+			// Get the last person's info.
+			id := cbftGetId(DIR_BASE + "/node-" + strconv.Itoa(i-1) + "/cbft")
+
+			peerAddress := id + "@" + ipToString(ipCurrent-1) + "26656"
+			configNode = strings.ReplaceAll(configNode, "{{ persistent_peers }}", peerAddress)
+		}
+		configNode = strings.ReplaceAll(configNode, "{{ seed_mode }}", "false")
+		configNode = strings.ReplaceAll(configNode, "{{ listen_prometheus }}", "false")
+		configNode = strings.ReplaceAll(configNode, "{{ seeds }}", seedAddress)
+
+		os.WriteFile(nodeDir+"/cbft/config/config.toml", []byte(configNode), 0o777)
+
+		setupYamlConfig(nodeDir)
+		os.WriteFile(nodeDir+"/cbft/config/genesis.json", []byte(genesisFile), 0o777)
+		ipCurrent += 1
+
+		fmt.Println("Made node: ", i)
+	}
+
+	fmt.Println("Compiling go program.")
+	cmd := exec.Command("go", "build", "-o", "core", "../..")
+	err = cmd.Run()
+	if err != nil {
+		panic(err)
+	}
+
+	// Launch all the nodes as processes.
+	fmt.Println("Running all nodes as processes.")
+
+	cmds := make([]*exec.Cmd, NODE_COUNT+2)
+	{
+		// Run first node.
+		cmds[0] = exec.Command("./core", "-config", genesisDir+"/config.yaml")
+		cmds[0].Stdout = os.Stdout
+		cmds[0].Stderr = os.Stderr
+
+		// Run seed node.
+		cmds[1] = exec.Command("./core", "-config", seedDir+"/config.yaml")
+		// cmds[1].Stdout = os.Stdout
+		// cmds[1].Stderr = os.Stderr
+
+		// Run all other nodes.
+		for i := 0; i < NODE_COUNT; i++ {
+			nodeDir := DIR_BASE + "/node-" + strconv.Itoa(i)
+			cmds[i+2] = exec.Command("./core", "-config", nodeDir+"/config.yaml")
+		}
+	}
+
+	go func() {
+		// Subscribe to sig int and cancel when done.
+		exitSignal := make(chan os.Signal, 1)
+		signal.Notify(exitSignal, syscall.SIGINT, syscall.SIGTERM)
+
+		<-exitSignal
+
+		for i := range cmds {
+			// Docker can't pull this off for some reason.
+			if cmds[i] != nil {
+				if cmds[i].Process != nil {
+					cmds[i].Process.Signal(os.Kill)
+				}
+			}
+		}
+
+		os.RemoveAll(DIR_BASE)
+
+		os.Exit(0)
+	}()
+
+	for i := range cmds {
+		if cmds[i] != nil {
+			err = cmds[i].Start()
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+
+	for i := range cmds {
+		if cmds[i] != nil {
+			cmds[i].Wait()
+		}
+	}
+}
+
+func setupYamlConfig(absoluteDirectory string) {
+	const yaml = `
+p2p:
+  # 0.0.0.0 = localhost
+  addr: 0.0.0.0
+  # 0 = random port
+  port: 0
+  groupName: xnode
+  peerLimit: 50
+bft:
+  homeDir: {{ bft-home-dir }}
+db:
+  username: username
+  password: password
+  port: 5432
+  dbName: nodedata
+  url: 127.0.0.1
+log:
+  development: true
+  encoding: json
+  info:
+    toStdout: true
+    toFile: true
+    fileName: logs/core-info.log
+    maxSize: 10
+    maxAge: 7
+    maxBackups: 10
+  error:
+    toStderr: true
+    toFile: true
+    fileName: logs/core-error.log
+    maxSize: 10
+    maxAge: 7
+    maxBackups: 10
+nft:
+  trackerData: /core/default-cometbft-home/data/nft-tracked
+  rpcAddress: https://rpc.ankr.com/eth_sepolia
+  unlimitedRPC: false
+`
+
+	fixedYaml := strings.Clone(yaml)
+	fixedYaml = strings.ReplaceAll(fixedYaml, "{{ bft-home-dir }}", absoluteDirectory+"/cbft")
+
+	os.WriteFile(absoluteDirectory+"/config.yaml", []byte(fixedYaml), 0o777)
+}
