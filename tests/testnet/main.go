@@ -209,8 +209,8 @@ func main() {
 	{
 		// Run first node.
 		cmds[0] = exec.Command("./core", "-config", genesisDir+"/config.yaml")
-		cmds[0].Stdout = os.Stdout
-		cmds[0].Stderr = os.Stderr
+		// cmds[0].Stdout = os.Stdout
+		// cmds[0].Stderr = os.Stderr
 
 		// Run seed node.
 		cmds[1] = exec.Command("./core", "-config", seedDir+"/config.yaml")
@@ -222,6 +222,8 @@ func main() {
 			nodeDir := DIR_BASE + "/node-" + strconv.Itoa(i)
 			cmds[i+2] = exec.Command("./core", "-config", nodeDir+"/config.yaml")
 		}
+		cmds[3].Stdout = os.Stdout
+		cmds[3].Stderr = os.Stderr
 	}
 
 	go func() {
