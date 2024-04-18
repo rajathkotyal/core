@@ -173,7 +173,8 @@ func main() {
 		configNode = strings.ReplaceAll(configNode, "{{ ip }}", ipToString(ipCurrent))
 
 		// Set up a persistent peer?
-		if i == 0 {
+		// HACK: Test only seed node.
+		if true {
 			configNode = strings.ReplaceAll(configNode, "{{ persistent_peers }}", "")
 		} else {
 			// Get the last person's info.

@@ -39,6 +39,8 @@ func (app *VerificationApp) PrepareProposal(_ context.Context, proposal *abcityp
 
 	// Only accept transactions that fit in the correct order?
 
+	// Will currently accept all transactions.
+
 	return &abcitypes.ResponsePrepareProposal{Txs: proposal.Txs}, nil
 }
 func (app *VerificationApp) ProcessProposal(_ context.Context, proposal *abcitypes.RequestProcessProposal) (*abcitypes.ResponseProcessProposal, error) {
@@ -61,11 +63,8 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 			txs[i] = &abcitypes.ExecTxResult{Code: code}
 		} else {
 			var transaction types.Transaction
-			// hexString := string(tx)
-			// tx, _ = hex.DecodeString(hexString)
-			// log.Debug("Transaction hex ", string(tx))
 			err := proto.Unmarshal(tx, &transaction)
-			// log.Debug("Transaction hex ", transaction.Type.Number())
+
 			if err != nil {
 				log.Error("Error unmarshaling transaction data:", err)
 				txs[i] = &abcitypes.ExecTxResult{Code: 1}
@@ -121,7 +120,7 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 			case types.TransactionType_NodeRegistrationTransaction:
 				registrationData := &types.NodeRegistrationTransactionData{}
 				registrationData = transaction.GetNodeRegistrationData()
-				// log.Debug("Node Registration Transaction Data:", registrationData)
+
 				publicKeyString := registrationData.GetNodeAddress()
 				pubKeyBytes, err := base64.StdEncoding.DecodeString(publicKeyString)
 				if err != nil {
@@ -137,7 +136,6 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 
 				if err != nil {
 					log.Error("Error marshalling PublicKey message:", err)
-
 				}
 
 				if err != nil {
