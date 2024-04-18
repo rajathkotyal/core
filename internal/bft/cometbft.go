@@ -124,7 +124,6 @@ func (inst *Instance) Start(ctx context.Context) {
 
 	registered := false
 
-
 	// Event handler
 	go func() {
 		for {
@@ -226,13 +225,14 @@ func (inst *Instance) Start(ctx context.Context) {
 
 						transaction := types.Tx(transactionBytes[:])
 
-						env, err := inst.BftNode.ConfigureRPC()
+						// env, err := inst.BftNode.ConfigureRPC()
 
 						if err != nil {
+							fmt.Println(transaction)
 							panic(err)
 						}
 
-						_, err = env.BroadcastTxAsync(&rpctypes.Context{}, transaction)
+						// _, err = env.BroadcastTxAsync(&rpctypes.Context{}, transaction)
 
 						if err != nil {
 							log.Error("Couldn't push transaction, reason: ", err)
