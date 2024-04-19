@@ -154,6 +154,7 @@ func (app *VerificationApp) FinalizeBlock(_ context.Context, req *abcitypes.Requ
 					Power:  10,
 				}
 				validatorupdates = append(validatorupdates, *validatorup)
+				log.Debug("Node succesfully registered: ", len(validatorupdates))
 				// log.Debug("Node Registration Transaction Data:", registrationData)
 
 			default:
