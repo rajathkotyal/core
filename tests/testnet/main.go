@@ -102,7 +102,7 @@ func main() {
 		panic(err)
 	}
 
-	// Set up bootsrap node.
+	// Set up bootstrap node.
 	fmt.Println("Setting up configs")
 
 	// Set up seed node.
@@ -125,7 +125,7 @@ func main() {
 	fmt.Println("Wrote seed node config")
 
 	genesisFile := ""
-	bootstrapDir := DIR_BASE + "/node-bootsrap"
+	bootstrapDir := DIR_BASE + "/node-bootstrap"
 	{
 		// Generate keys.
 		// Get a copy of the public id.
