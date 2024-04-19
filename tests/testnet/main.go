@@ -4,10 +4,6 @@ package main
 //	- Using cometbft cli since it is easier than importing the libraries for now.
 //	-
 
-// TODO:
-//	- Rename Genesis to boostrap to avoid confusion.
-//	- Allow configuration of subnet?
-
 import (
 	"bytes"
 	"fmt"
@@ -19,11 +15,8 @@ import (
 	"syscall"
 )
 
-// NOTE: Have to run sudo ip addr add 192.168.4.0/20 dev lo
-// NOTE: Will get rounded to a power of 2 for subnet to make sense - 2 for a seed node and a genesis node
 const NODE_COUNT = 10
 const DIR_BASE = "/tmp/test"
-const DIR_SHARED = DIR_BASE + "/shared"
 
 // Won't necessarily be compatible with OS.
 // Made to work internally only.
@@ -89,8 +82,8 @@ func main() {
 
 	subnetIp := ipToInt("192.168.4.0")
 	fmt.Println("Running on ip", ipToString(subnetIp))
-	genesisNodeIp := subnetIp + 1
-	seedNodeIp := genesisNodeIp + 1
+	bootstrapNodeIp := subnetIp + 1
+	seedNodeIp := bootstrapNodeIp + 1
 
 	// Set up subnet.
 	{
@@ -109,7 +102,7 @@ func main() {
 		panic(err)
 	}
 
-	// Set up genesis node.
+	// Set up bootsrap node.
 	fmt.Println("Setting up configs")
 
 	// Set up seed node.
@@ -132,33 +125,33 @@ func main() {
 	fmt.Println("Wrote seed node config")
 
 	genesisFile := ""
-	genesisDir := DIR_BASE + "/node-genesis"
+	bootstrapDir := DIR_BASE + "/node-bootsrap"
 	{
 		// Generate keys.
 		// Get a copy of the public id.
 		// Actually just steal genesis.json and paste on other nodes.
 
-		cbftInit(genesisDir + "/cbft")
+		cbftInit(bootstrapDir + "/cbft")
 
 		// Paste config and replace values.
-		configGenesis := strings.Clone(configTemplate)
-		configGenesis = strings.ReplaceAll(configGenesis, "{{ ip }}", ipToString(genesisNodeIp))
-		configGenesis = strings.ReplaceAll(configGenesis, "{{ persistent_peers }}", "")
-		configGenesis = strings.ReplaceAll(configGenesis, "{{ seed_mode }}", "false")
-		configGenesis = strings.ReplaceAll(configGenesis, "{{ listen_prometheus }}", "true")
-		configGenesis = strings.ReplaceAll(configGenesis, "{{ seeds }}", seedAddress)
+		configBootstrap := strings.Clone(configTemplate)
+		configBootstrap = strings.ReplaceAll(configBootstrap, "{{ ip }}", ipToString(bootstrapNodeIp))
+		configBootstrap = strings.ReplaceAll(configBootstrap, "{{ persistent_peers }}", "")
+		configBootstrap = strings.ReplaceAll(configBootstrap, "{{ seed_mode }}", "false")
+		configBootstrap = strings.ReplaceAll(configBootstrap, "{{ listen_prometheus }}", "true")
+		configBootstrap = strings.ReplaceAll(configBootstrap, "{{ seeds }}", seedAddress)
 
-		os.WriteFile(genesisDir+"/cbft/config/config.toml", []byte(configGenesis), 0o777)
+		os.WriteFile(bootstrapDir+"/cbft/config/config.toml", []byte(configBootstrap), 0o777)
 
-		genesisFileBytes, err := os.ReadFile(genesisDir + "/cbft/config/genesis.json")
+		genesisFileBytes, err := os.ReadFile(bootstrapDir + "/cbft/config/genesis.json")
 		if err != nil {
 			panic(err)
 		}
 
-		setupYamlConfig(genesisDir)
+		setupYamlConfig(bootstrapDir)
 		genesisFile = string(genesisFileBytes)
 	}
-	fmt.Println("Wrote genesis node config")
+	fmt.Println("Wrote bootstrap node config")
 
 	// Copy the genesis file to the seed node.
 	os.WriteFile(seedDir+"/cbft/config/genesis.json", []byte(genesisFile), 0o777)
@@ -209,7 +202,7 @@ func main() {
 	cmds := make([]*exec.Cmd, NODE_COUNT+2)
 	{
 		// Run first node.
-		cmds[0] = exec.Command("./core", "-config", genesisDir+"/config.yaml")
+		cmds[0] = exec.Command("./core", "-config", bootstrapDir+"/config.yaml")
 		cmds[0].Stdout = os.Stdout
 		cmds[0].Stderr = os.Stderr
 
