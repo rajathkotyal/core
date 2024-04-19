@@ -16,7 +16,7 @@ version = "0.38.6"
 
 # TCP or UNIX socket address of the ABCI application,
 # or the name of an ABCI application compiled in with the CometBFT binary
-proxy_app = "tcp://{{ ip }}:26658"
+proxy_app = "tcp://{{ ip }}:{{ port-abci }}"
 
 # A custom human readable name for this node
 moniker = "openmesh-virtual-machine"
@@ -87,7 +87,7 @@ filter_peers = false
 [rpc]
 
 # TCP or UNIX socket address for the RPC server to listen on
-laddr = "tcp://{{ ip }}:26657"
+laddr = "tcp://{{ ip }}:{{ port-rpc }}"
 
 # A list of origins a cross-domain request can be executed from
 # Default value '[]' disables cors support
@@ -198,12 +198,12 @@ pprof_laddr = ""
 [p2p]
 
 # Address to listen for incoming connections
-laddr = "tcp://{{ ip }}:26656"
+laddr = "tcp://{{ ip }}:{{ port-p2p }}"
 
 # Address to advertise to peers for them to dial. If empty, will use the same
 # port as the laddr, and will introspect on the listener to figure out the
 # address. IP and port are required. Example: 159.89.10.97:26656
-external_address = "{{ ip }}:26656"
+external_address = "{{ ip-public }}:{{ port-p2p }}"
 
 # Comma separated list of seed nodes to connect to
 seeds = "{{ seeds }}"

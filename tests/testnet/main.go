@@ -7,6 +7,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -17,6 +18,7 @@ import (
 
 const NODE_COUNT = 10
 const DIR_BASE = "/tmp/test"
+const INCREMENT_IPS = false
 
 // Won't necessarily be compatible with OS.
 // Made to work internally only.
@@ -74,25 +76,41 @@ func cbftGetId(absoluteDirectory string) string {
 	return strings.ReplaceAll(string(out), "\n", "")
 }
 
+func strInt(s string) int {
+	ret, err := strconv.Atoi(s)
+	if err != nil {
+		panic(err)
+	}
+
+	return ret
+}
+
+func intStr(i int) string {
+	ret := strconv.Itoa(i)
+
+	return ret
+}
+
 func main() {
 	// Check if cometbft command is installed?
 
-	// Subnet address.
-	const subnet = "192.168.4.0/20"
+	var ip uint32
+	if len(os.Args) > 1 {
+		ip = ipToInt(os.Args[1])
+	} else {
+		resp, err := http.Get("https://ifconfig.me")
+		if err != nil {
+			panic(err)
+		}
 
-	subnetIp := ipToInt("192.168.4.0")
-	fmt.Println("Running on ip", ipToString(subnetIp))
-	bootstrapNodeIp := subnetIp + 1
-	seedNodeIp := bootstrapNodeIp + 1
-
-	// Set up subnet.
-	{
-		// cmd := exec.Command("ip", "addr", "add", "192.168.4.0/20", "dev", "lo")
-		// err := cmd.Run()
-		// if err != nil {
-		// 	panic(err)
-		// }
+		buf := new(bytes.Buffer)
+		buf.ReadFrom(resp.Body)
+		ip = ipToInt(buf.String())
 	}
+
+	fmt.Println("Running on ip", ipToString(ip))
+	bootstrapNodeIp := ip + 1
+	seedNodeIp := bootstrapNodeIp
 
 	// Load template config.
 	configTemplateBytes, err := os.ReadFile("config-template.toml")
@@ -108,10 +126,19 @@ func main() {
 	// Set up seed node.
 	seedAddress := ""
 	seedDir := DIR_BASE + "/node-seed"
+	portCurrent := 26654
 	{
 		cbftInit(seedDir + "/cbft")
 		configSeed := strings.Clone(configTemplate)
-		configSeed = strings.ReplaceAll(configSeed, "{{ ip }}", ipToString(seedNodeIp))
+		configSeed = strings.ReplaceAll(configSeed, "{{ ip }}", "0.0.0.0")
+		configSeed = strings.ReplaceAll(configSeed, "{{ ip-public }}", ipToString(seedNodeIp))
+		configSeed = strings.ReplaceAll(configSeed, "{{ port-p2p }}", intStr(portCurrent))
+		seedAddress = cbftGetId(seedDir+"/cbft") + "@" + ipToString(seedNodeIp) + ":" + intStr(portCurrent)
+		portCurrent += 1
+		configSeed = strings.ReplaceAll(configSeed, "{{ port-rpc }}", intStr(portCurrent))
+		portCurrent += 1
+		configSeed = strings.ReplaceAll(configSeed, "{{ port-abci }}", intStr(portCurrent))
+		portCurrent += 1
 		configSeed = strings.ReplaceAll(configSeed, "{{ persistent_peers }}", "")
 		configSeed = strings.ReplaceAll(configSeed, "{{ seed_mode }}", "true")
 		configSeed = strings.ReplaceAll(configSeed, "{{ listen_prometheus }}", "false")
@@ -119,7 +146,6 @@ func main() {
 
 		os.WriteFile(seedDir+"/cbft/config/config.toml", []byte(configSeed), 0o777)
 
-		seedAddress = cbftGetId(seedDir+"/cbft") + "@" + ipToString(seedNodeIp) + ":26656"
 		setupYamlConfig(seedDir)
 	}
 	fmt.Println("Wrote seed node config")
@@ -135,7 +161,15 @@ func main() {
 
 		// Paste config and replace values.
 		configBootstrap := strings.Clone(configTemplate)
-		configBootstrap = strings.ReplaceAll(configBootstrap, "{{ ip }}", ipToString(bootstrapNodeIp))
+		configBootstrap = strings.ReplaceAll(configBootstrap, "{{ ip }}", "0.0.0.0")
+		configBootstrap = strings.ReplaceAll(configBootstrap, "{{ ip-public }}", ipToString(seedNodeIp))
+		configBootstrap = strings.ReplaceAll(configBootstrap, "{{ port-p2p }}", intStr(portCurrent))
+		portCurrent += 1
+		configBootstrap = strings.ReplaceAll(configBootstrap, "{{ port-rpc }}", intStr(portCurrent))
+		portCurrent += 1
+		configBootstrap = strings.ReplaceAll(configBootstrap, "{{ port-abci }}", intStr(portCurrent))
+		portCurrent += 1
+		portCurrent += 1
 		configBootstrap = strings.ReplaceAll(configBootstrap, "{{ persistent_peers }}", "")
 		configBootstrap = strings.ReplaceAll(configBootstrap, "{{ seed_mode }}", "false")
 		configBootstrap = strings.ReplaceAll(configBootstrap, "{{ listen_prometheus }}", "true")
@@ -155,7 +189,7 @@ func main() {
 
 	// Copy the genesis file to the seed node.
 	os.WriteFile(seedDir+"/cbft/config/genesis.json", []byte(genesisFile), 0o777)
-	ipCurrent := seedNodeIp + 1
+	ipCurrent := seedNodeIp
 
 	for i := 0; i < NODE_COUNT; i++ {
 		nodeDir := DIR_BASE + "/node-" + strconv.Itoa(i)
@@ -163,7 +197,8 @@ func main() {
 
 		// Paste config and replace values.
 		configNode := strings.Clone(configTemplate)
-		configNode = strings.ReplaceAll(configNode, "{{ ip }}", ipToString(ipCurrent))
+		configNode = strings.ReplaceAll(configNode, "{{ ip }}", "0.0.0.0")
+		configNode = strings.ReplaceAll(configNode, "{{ ip-public }}", ipToString(seedNodeIp))
 
 		// Set up a persistent peer?
 		// HACK: Test only seed node.
@@ -171,14 +206,22 @@ func main() {
 			configNode = strings.ReplaceAll(configNode, "{{ persistent_peers }}", "")
 		} else {
 			// Get the last person's info.
-			id := cbftGetId(DIR_BASE + "/node-" + strconv.Itoa(i-1) + "/cbft")
+			panic("This should not be running")
+			// id := cbftGetId(DIR_BASE + "/node-" + strconv.Itoa(i-1) + "/cbft")
 
-			peerAddress := id + "@" + ipToString(ipCurrent-1) + ":26656"
-			configNode = strings.ReplaceAll(configNode, "{{ persistent_peers }}", peerAddress)
+			// peerAddress := id + "@" + ipToString(ipCurrent-1) + ":26656"
+			// configNode = strings.ReplaceAll(configNode, "{{ persistent_peers }}", peerAddress)
 		}
 		configNode = strings.ReplaceAll(configNode, "{{ seed_mode }}", "false")
 		configNode = strings.ReplaceAll(configNode, "{{ listen_prometheus }}", "false")
 		configNode = strings.ReplaceAll(configNode, "{{ seeds }}", seedAddress)
+
+		configNode = strings.ReplaceAll(configNode, "{{ port-p2p }}", intStr(portCurrent))
+		portCurrent += 1
+		configNode = strings.ReplaceAll(configNode, "{{ port-rpc }}", intStr(portCurrent))
+		portCurrent += 1
+		configNode = strings.ReplaceAll(configNode, "{{ port-abci }}", intStr(portCurrent))
+		portCurrent += 1
 
 		os.WriteFile(nodeDir+"/cbft/config/config.toml", []byte(configNode), 0o777)
 
