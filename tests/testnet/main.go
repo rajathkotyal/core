@@ -109,7 +109,7 @@ func main() {
 	}
 
 	fmt.Println("Running on ip", ipToString(ip))
-	bootstrapNodeIp := ip + 1
+	bootstrapNodeIp := ip
 	seedNodeIp := bootstrapNodeIp
 
 	// Load template config.
