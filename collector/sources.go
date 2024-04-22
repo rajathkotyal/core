@@ -33,7 +33,7 @@ type Source struct {
 var Sources = [...]Source{
 	// Centralised Exchanges:
 	// Note that the topics are incomplete as they are undecided.
-	{"binance", defaultJoinCEX, "wss://stream.binance.com:9443/ws", []string{"usdt.usdc", "btc.eth", "eth.usdt"}, "{\"method\": \"SUBSCRIBE\", \"params\": [ \"{{topic}}@aggTrade\" ], \"id\": 1}"},
+	{"binance", defaultJoinCEX, "wss://stream.binance.com:9443/ws", []string{"btcusdt", "ethusdt", "solusdt"}, "{ \"method\": \"SUBSCRIBE\", \"params\": [ \"{{topic}}@aggTrade\" ], \"id\": 1 }"},
 	{"coinbase", defaultJoinCEX, "wss://ws-feed.pro.coinbase.com", []string{"BTC-USD", "ETH-USD", "BTC-ETH"}, "{\"type\": \"subscribe\", \"product_ids\": [ \"{{topic}}\" ], \"channels\": [ \"ticker\" ]}"},
 	{"dydx", defaultJoinCEX, "wss://api.dydx.exchange/v3/ws", []string{"MATIC-USD", "LINK-USD", "SOL-USD", "ETH-USD", "BTC-USD"}, "{\"type\": \"subscribe\", \"id\": \"{{topic}}\", \"channel\": \"v3_trades\"}"},
 
@@ -50,15 +50,11 @@ var Sources = [...]Source{
 	// https://www.okx.com/docs-v5/en/#spread-trading-websocket-public-channel
 	{
 		"okx",
-		okxJoinCEX,
+		defaultJoinCEX,
 		"wss://ws.okx.com:8443/ws/v5/business",
 		[]string{"sprd-bbo-tbt", "sprd-books5", "sprd-public-trades", "sprd-tickers"},
 		`{"op": "subscribe","args": [{"channel": "{{topic}}","sprdId": "BTC-USDT_BTC-USDT-SWAP"}]}`,
 	},
-
-	// Centralised NFT Exchange:
-	// Opensea Request structure: {topic: \ event: \ payload:{} \ ref: }
-	{"opensea", defaultJoinNFTCEX, "wss://stream.openseabeta.com/socket", []string{"item_listed", "item_cancelled", "item_sold", "item_transferred", "item_received_offer", "item_received_bid"}, "collections:*"},
 
 	// Decentralised Exchanges
 	// Add Uniswap
@@ -66,6 +62,12 @@ var Sources = [...]Source{
 	// Blockchain RPCs:
 	{"ethereum-ankr-rpc", ankrJoinRPC, "https://rpc.ankr.com/eth", []string{""}, ""},
 	{"polygon-ankr-rpc", ankrJoinRPC, "https://rpc.ankr.com/polygon", []string{""}, ""},
+
+	// XXX: Disabled for now since it requires an API key. We can't guarantee nodes in the actual network will have this key.
+	// Centralised NFT Exchange:
+	// Opensea Request structure: {topic: \ event: \ payload:{} \ ref: }
+	// {"opensea", defaultJoinNFTCEX, "wss://stream.openseabeta.com/socket", []string{"item_listed", "item_cancelled", "item_sold", "item_transferred", "item_received_offer", "item_received_bid"}, "collections:*"},
+
 }
 
 // Subscribe will connect to the chosen source and create a channel which will return every message from it.
@@ -119,7 +121,9 @@ func defaultJoinCEX(ctx context.Context, source Source, topic string) (chan []by
 	}
 
 	request := strings.Replace(source.Request, "{{topic}}", topic, 1)
-	ws.Write(ctx, websocket.MessageBinary, []byte(request))
+
+	fmt.Println(request)
+	ws.Write(ctx, websocket.MessageText, []byte(request))
 
 	msgChannel := make(chan []byte)
 	errChannel := make(chan error, 1)
@@ -129,7 +133,7 @@ func defaultJoinCEX(ctx context.Context, source Source, topic string) (chan []by
 		defer close(errChannel)
 		for {
 			ntype, n, err := ws.Read(ctx)
-			fmt.Printf("Recieved message of type: %s", ntype)
+			fmt.Printf("Received message of type: %s\n", ntype)
 			if err != nil {
 				errChannel <- err
 				return
@@ -170,7 +174,7 @@ func okxJoinCEX(ctx context.Context, source Source, topic string) (chan []byte, 
 		defer close(errChannel)
 		for {
 			ntype, n, err := ws.Read(ctx)
-			fmt.Printf("Recieved message of type: %s", ntype)
+			fmt.Printf("Received message of type: %s", ntype)
 			if err != nil {
 				errChannel <- err
 				return
