@@ -16,7 +16,7 @@ import (
 	"syscall"
 )
 
-const DEFAULT_NODE_COUNT = 200
+const DEFAULT_NODE_COUNT = 300
 const DIR_BASE = "/data"
 const INCREMENT_IPS = false
 
