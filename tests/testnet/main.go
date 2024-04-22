@@ -120,11 +120,11 @@ func main() {
 	}
 
 	if len(os.Args) > 3 {
-		genesisFileArg = os.Args[2]
+		genesisFileArg = os.Args[3]
 	}
 
 	if len(os.Args) > 4 {
-		nodeCount = strInt(os.Args[3])
+		nodeCount = strInt(os.Args[4])
 	}
 
 	fmt.Println("Running on ip", ipToString(ip))
