@@ -42,8 +42,16 @@ cbft-home/config/genesis.json
 .DS_Store
 executable-file
 /ignore
+<<<<<<< HEAD
+=======
+/collector/.env
+>>>>>>> origin/openmesh-sink
 log.txt
 
+# Default cometbft state (config.toml is important)
+/default-cometbft-home/data
+/default-cometbft-home/config/node_key.json
+/default-cometbft-home/config/priv_validator_key.json
 # Get rid of logs
 logs
 Test
