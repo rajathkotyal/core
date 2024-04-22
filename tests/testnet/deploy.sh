@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # Hardcoded 
-SEED_NODE=3f9f5bc6662b4bf0a320b73ca7a741e438826d5c@145.40.102.193:26654
+SEED_NODE=
 GENESIS_JSON=genesis.json
 
 # List of IPs
-IPS=67.219.99.204
+IPS=
 
 NODE_COUNT=300
 

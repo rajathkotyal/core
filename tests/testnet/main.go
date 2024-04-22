@@ -151,9 +151,11 @@ func main() {
 		configSeed := strings.Clone(configTemplate)
 
 		if len(seedAddressArg) > 0 {
-			seedAddresses = seedAddressArg + ","
+			seedAddresses = seedAddressArg
+			// seedAddresses += ","
+		} else {
+			seedAddresses = cbftGetId(seedDir+"/cbft") + "@" + ipToString(seedNodeIp) + ":" + intStr(portCurrent)
 		}
-		seedAddresses = cbftGetId(seedDir+"/cbft") + "@" + ipToString(seedNodeIp) + ":" + intStr(portCurrent)
 
 		replace(&configSeed, "{{ ip }}", "0.0.0.0")
 		replace(&configSeed, "{{ ip-public }}", ipToString(seedNodeIp))
@@ -292,8 +294,8 @@ func main() {
 			nodeDir := DIR_BASE + "/node-" + strconv.Itoa(i)
 			cmds[i+2] = exec.Command("./core", "-config", nodeDir+"/config.yaml")
 		}
-		cmds[3].Stdout = os.Stdout
-		cmds[3].Stderr = os.Stderr
+		cmds[30].Stdout = os.Stdout
+		cmds[30].Stderr = os.Stderr
 	}
 
 	for i := range cmds {
