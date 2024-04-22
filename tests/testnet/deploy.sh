@@ -7,7 +7,7 @@ GENESIS_JSON=genesis.json
 # List of IPs
 IPS=
 
-NODE_COUNT=300
+NODE_COUNT=200
 
 # Ssh everything needed in there.
 
