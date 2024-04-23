@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -182,7 +183,7 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 					if throughput > globalWindow.Throughput {
 						globalWindow = window
 					}
-					fmt.Println("Window changed :", window, " current max throughput : ", globalWindow.Throughput)
+					// fmt.Println("Window changed :", window, " current max throughput : ", globalWindow.Throughput)
 				}
 			case <-ctx.Done():
 				close(windowChange)
@@ -219,7 +220,7 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 					Symbol:       symbol,
 					StartTime:    windowKey,
 					DataSize:     0,
-					MessageCount: 0,
+					MessageCount: 1,
 				}
 				dc.DataWindows[windowKey] = window
 			}
@@ -246,9 +247,9 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 			sourceMetrics.mu.Unlock()
 
 			// Debug
-			// if strings.Contains(source.Name, "coinbase") {
-			// 	fmt.Println("CB : ", string(msg), " Len : ", int64(len(msg)), messageCount)
-			// }
+			if strings.Contains(source.Name, "coinbase") {
+				fmt.Println("CB public ethusd : ", string(msg), " Len : ", int64(len(msg)), messageCount)
+			}
 
 		case <-timerLocal.C:
 			fmt.Println("Received entire data for  : ", source.Name, symbol, ".  Now stopping metric collection, message ct : ", messageCount)
