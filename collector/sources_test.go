@@ -210,6 +210,7 @@ func TestAnkrPolygonJoin(t *testing.T) {
 	}
 }
 
+// use timeout flag : go test -timeout 600s -run TestSourcesDataSize
 func TestSourcesDataSize(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -218,6 +219,7 @@ func TestSourcesDataSize(t *testing.T) {
 		t.Fatal("Error creating writer.")
 	}
 	// Time period to collect datd : Seconds (integer values only. !)
-	var timeToCollect int = 10
-	CalculateDataSize(t, ctx, dataWriter, timeToCollect)
+	var timeToCollect int = 60
+	var windowTimeFrame int = 10
+	CalculateDataSize(t, ctx, dataWriter, timeToCollect, windowTimeFrame)
 }

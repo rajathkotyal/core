@@ -5,7 +5,6 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +13,43 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	log "github.com/openmesh-network/core/internal/logger"
 )
+
+type DataWindow struct {
+	SourceName   string
+	Symbol       string
+	StartTime    string
+	DataSize     int64
+	MessageCount int
+	Throughput   float64
+}
+
+type DataCollector struct {
+	Source        Source
+	TimeWindow    time.Duration
+	DataWindows   map[string]*DataWindow
+	MaxThroughput float64
+	BusiestWindow *DataWindow
+}
+
+// TODO : Wait for all routines of a given source to return back,
+// update (+=) throughput for a given source accross all routines such that
+// we get the total throughput from all topics during a time interval (regardless of the token name)
+// We fetch the highest throughput and return the timeframe of that.
+type SourceMetric struct {
+	sourceName                     string
+	sourceNameBusiestDataWindowMap map[string]*DataWindow
+	mu                             sync.Mutex
+}
+
+func NewDataCollector(source Source, windowTimeSize time.Duration) *DataCollector {
+	return &DataCollector{
+		Source:        source,
+		TimeWindow:    windowTimeSize,
+		DataWindows:   make(map[string]*DataWindow),
+		MaxThroughput: 0,
+		BusiestWindow: &DataWindow{Throughput: -1},
+	}
+}
 
 type DataWriter struct {
 	file   *os.File
@@ -54,34 +90,37 @@ func (dw *DataWriter) Close() error {
 
 // Handler to subscribe to each source and symbol & measure data size over a
 // set period from current time.
-func CalculateDataSize(t *testing.T, ctx context.Context, dataWriter *DataWriter, timeToCollect int) {
+func CalculateDataSize(t *testing.T, ctx context.Context, dataWriter *DataWriter, timeToCollect int, timeFrameWindowSize int) {
 
-	// TODO : Implement busiest times of a given src for a given symbol.
+	// Busiest times of a given src for a given symbol --> To detect high trading volume for a given symbol.
 	// Fetch data in parts of a whole. 10 mins --> 1 min windows which contain size of
-	// msgs received during that period and also number of msgs. Can calculate the load w this.
+	// msgs received during that period and also number of msgs. Can calculate the load w this. --> Throughput = size / window time frame.
 	// for that time frame.
 	startTime := time.Now()
 	endTime := startTime.Add(time.Duration(timeToCollect) * time.Second)
+	timeFrame := time.Duration(timeFrameWindowSize) * time.Second
 	timeFormat := "15:04:05, 02 Jan 2006"
 	busyHeader := fmt.Sprintf("Busiest Time (Data collected for %d seconds Btw %s till %s)", timeToCollect, startTime.Format(timeFormat), endTime.Format(timeFormat))
 
-	if err := dataWriter.writer.Write([]string{"Source", "Symbol", "Data Size (bytes)", "Throughput", busyHeader}); err != nil {
+	//header
+	if err := dataWriter.writer.Write([]string{"Source", "Symbol", "Data Size (bytes)", "Throughput", busyHeader, "Busiest Throughput time in the interval", "messages received"}); err != nil {
 		t.Fatalf("Failed to write header to CSV: %s", err)
 	}
 
 	var wg sync.WaitGroup
 	for _, source := range Sources {
 		for _, topic := range source.Topics {
+			dc := NewDataCollector(source, timeFrame)
 			wg.Add(1)
 			go func(src Source, tpc string) {
 				defer wg.Done()
-
 				// subscribe and wait till the time period for each src/symbol.
-				size := subscribeAndMeasure(ctx, src, tpc, time.NewTimer(time.Duration(timeToCollect)*time.Second))
+				size, busiestWindow := subscribeAndMeasure(ctx, src, tpc, time.NewTimer(time.Duration(timeToCollect)*time.Second), dc, timeFrameWindowSize)
 				throughput := size / int64(timeToCollect)
-				fmt.Printf("Data size  for %s - %s: %d bytes, with TP : %d\n", src.Name, tpc, size, throughput)
+				fmt.Printf("Data size  for %s - %s: %d bytes, with TP : %d \n", src.Name, tpc, size, throughput)
+				throughputStr := fmt.Sprintf("%.2f", busiestWindow.Throughput)
 
-				record := []string{src.Name, tpc, fmt.Sprintf("%d", size), fmt.Sprintf("%d", throughput)}
+				record := []string{src.Name, tpc, fmt.Sprintf("%d", size), fmt.Sprintf("%d", throughput), busiestWindow.StartTime, throughputStr, fmt.Sprintf("%d", busiestWindow.MessageCount)}
 
 				// Write to CSV
 				dataWriter.mu.Lock()
@@ -101,15 +140,43 @@ func CalculateDataSize(t *testing.T, ctx context.Context, dataWriter *DataWriter
 }
 
 // handles the subscription and updates size the data as its received.
-func subscribeAndMeasure(ctx context.Context, source Source, symbol string, timer *time.Timer) int64 {
+func subscribeAndMeasure(ctx context.Context, source Source, symbol string, timer *time.Timer, dc *DataCollector, timeFrameWindowSize int) (int64, *DataWindow) {
 	msgChan, err := Subscribe(ctx, source, symbol)
 	if err != nil {
 		log.Info("Error subscribing to source %s with symbol %s: %v", source.Name, symbol, err)
-		return 0
+		return 0, &DataWindow{}
 	}
 
 	var dataSize int64
+	var messageCount int64
 	timerLocal := timer
+
+	// InitialThroughput := float64(len(msgChan)) / float64(1)
+	globalWindow := &DataWindow{DataSize: int64(len(msgChan)), MessageCount: 1, Throughput: -1}
+	windowChange := make(chan string, 1)
+	oldWindowKey := ""
+
+	// Manage window timings
+	go func() {
+		for {
+			select {
+			case windowKey := <-windowChange:
+				window := dc.DataWindows[windowKey]
+				if window != nil {
+					throughput := float64(window.DataSize) / float64(timeFrameWindowSize)
+					window.Throughput = throughput
+
+					if throughput > globalWindow.Throughput {
+						globalWindow = window
+					}
+					fmt.Println("Window changed :", window, " current max throughput : ", globalWindow.Throughput)
+				}
+			case <-ctx.Done():
+				close(windowChange)
+				return
+			}
+		}
+	}()
 
 	for {
 		select {
@@ -117,21 +184,52 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 
 			// TEMP : need to have an identifier for RPC calls,
 			// have hardcoded for now.
-			if strings.Contains(source.Name, "rpc") {
-				// fmt.Println("RPC Token : ", source.Topics, "msg : ", string(msg))
-
-				// Should data from RPC calls be unmarshalled?
-				// Not sure what data we need to be storing, have kept the unmarshall
-				// function here anyway for future use.
-				handleRPCData(msg)
+			// fmt.Println("Msg from channel : ", string(msg))
+			if int64(len(msg)) == 0 || msg == nil {
+				continue
 			}
+
+			currentTime := time.Now()
+			// this rounds down the current time to the timeWindow
+			// if say window is 10 min, 21:16:57 is rounded to 21:10:00
+			// such that we can have a map of all elements between 21:10:00 till 21:20:00
+			// Format preserves quality by conv to string.
+			windowKey := currentTime.Truncate(dc.TimeWindow).Format(time.RFC3339)
+
+			window, exists := dc.DataWindows[windowKey]
+			if !exists {
+				if oldWindowKey == "" {
+					windowChange <- windowKey
+				} else {
+					windowChange <- oldWindowKey
+				}
+				window = &DataWindow{
+					SourceName:   source.Name,
+					Symbol:       symbol,
+					StartTime:    windowKey,
+					DataSize:     0,
+					MessageCount: 0,
+				}
+				dc.DataWindows[windowKey] = window
+			}
+			oldWindowKey = windowKey
+			dc.DataWindows[windowKey].DataSize += int64(len(msg))
+			dc.DataWindows[windowKey].MessageCount += 1
+
 			dataSize += int64(len(msg))
+			messageCount += 1
+
+			// Debug
+			// if strings.Contains(source.Name, "coinbase") {
+			// 	fmt.Println("CB : ", string(msg), " Len : ", int64(len(msg)), messageCount)
+			// }
 
 		case <-timerLocal.C:
-			fmt.Println("Received entire data for  : ", source.Name, symbol, ".  Now stopping metric collection")
-			return dataSize
+			fmt.Println("Received entire data for  : ", source.Name, symbol, ".  Now stopping metric collection, message ct : ", messageCount)
+
+			return dataSize, globalWindow
 		case <-ctx.Done():
-			return dataSize
+			return dataSize, globalWindow
 		}
 	}
 }
@@ -141,6 +239,6 @@ func handleRPCData(data []byte) bloc.Block {
 	if err := rlp.DecodeBytes(data, &block); err != nil {
 		log.Fatalf("RLP Decoding failed: %v", err)
 	}
-	fmt.Println("block rpc hash data : ", block.Hash())
+	// fmt.Println("block rpc hash data : ", block.Hash())
 	return block
 }
