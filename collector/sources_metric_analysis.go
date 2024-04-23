@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	bloc "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
 	log "github.com/openmesh-network/core/internal/logger"
 )
 
@@ -27,18 +25,24 @@ type DataCollector struct {
 	Source        Source
 	TimeWindow    time.Duration
 	DataWindows   map[string]*DataWindow
-	MaxThroughput float64
 	BusiestWindow *DataWindow
 }
 
-// TODO : Wait for all routines of a given source to return back,
-// update (+=) throughput for a given source accross all routines such that
-// we get the total throughput from all topics during a time interval (regardless of the token name)
-// We fetch the highest throughput and return the timeframe of that.
 type SourceMetric struct {
 	sourceName                     string
-	sourceNameBusiestDataWindowMap map[string]*DataWindow
+	sourceTotalThroughputPerWindow map[string]float64
+	busiestTimeWindowStartTime     string
+	busiestThroughput              float64
 	mu                             sync.Mutex
+}
+
+func NewSourceMetric(sourceName string) *SourceMetric {
+	return &SourceMetric{
+		sourceName:                     sourceName,
+		sourceTotalThroughputPerWindow: make(map[string]float64),
+		busiestTimeWindowStartTime:     "",
+		busiestThroughput:              -1,
+	}
 }
 
 func NewDataCollector(source Source, windowTimeSize time.Duration) *DataCollector {
@@ -46,7 +50,6 @@ func NewDataCollector(source Source, windowTimeSize time.Duration) *DataCollecto
 		Source:        source,
 		TimeWindow:    windowTimeSize,
 		DataWindows:   make(map[string]*DataWindow),
-		MaxThroughput: 0,
 		BusiestWindow: &DataWindow{Throughput: -1},
 	}
 }
@@ -88,8 +91,7 @@ func (dw *DataWriter) Close() error {
 	return nil
 }
 
-// Handler to subscribe to each source and symbol & measure data size over a
-// set period from current time.
+// Handler to subscribe to each source and symbol & measure data size over a set period from current time.
 func CalculateDataSize(t *testing.T, ctx context.Context, dataWriter *DataWriter, timeToCollect int, timeFrameWindowSize int) {
 
 	// Busiest times of a given src for a given symbol --> To detect high trading volume for a given symbol.
@@ -102,36 +104,47 @@ func CalculateDataSize(t *testing.T, ctx context.Context, dataWriter *DataWriter
 	timeFormat := "15:04:05, 02 Jan 2006"
 	busyHeader := fmt.Sprintf("Busiest Time (Data collected for %d seconds Btw %s till %s)", timeToCollect, startTime.Format(timeFormat), endTime.Format(timeFormat))
 
-	//header
-	if err := dataWriter.writer.Write([]string{"Source", "Symbol", "Data Size (bytes)", "Throughput", busyHeader, "Busiest Throughput time in the interval", "messages received"}); err != nil {
+	//headerCSv
+	if err := dataWriter.writer.Write([]string{"Source", "Symbol", "Data Size (bytes)", "Throughput", busyHeader, "Throughput in the interval", "messages count received during interval"}); err != nil {
 		t.Fatalf("Failed to write header to CSV: %s", err)
 	}
 
 	var wg sync.WaitGroup
+	sourceMetricsList := make([]*SourceMetric, 0)
+
 	for _, source := range Sources {
+		sourceMetric := NewSourceMetric(source.Name)
+		sourceMetricsList = append(sourceMetricsList, sourceMetric)
 		for _, topic := range source.Topics {
 			dc := NewDataCollector(source, timeFrame)
 			wg.Add(1)
-			go func(src Source, tpc string) {
+			go func(src Source, tpc string, srcMetric *SourceMetric) {
 				defer wg.Done()
 				// subscribe and wait till the time period for each src/symbol.
-				size, busiestWindow := subscribeAndMeasure(ctx, src, tpc, time.NewTimer(time.Duration(timeToCollect)*time.Second), dc, timeFrameWindowSize)
+				size, busiestWindow := subscribeAndMeasure(ctx, src, tpc, time.NewTimer(time.Duration(timeToCollect)*time.Second), dc, timeFrameWindowSize, srcMetric)
 				throughput := size / int64(timeToCollect)
 				fmt.Printf("Data size  for %s - %s: %d bytes, with TP : %d \n", src.Name, tpc, size, throughput)
 				throughputStr := fmt.Sprintf("%.2f", busiestWindow.Throughput)
 
 				record := []string{src.Name, tpc, fmt.Sprintf("%d", size), fmt.Sprintf("%d", throughput), busiestWindow.StartTime, throughputStr, fmt.Sprintf("%d", busiestWindow.MessageCount)}
 
-				// Write to CSV
 				dataWriter.mu.Lock()
 				defer dataWriter.mu.Unlock()
 				if err := dataWriter.writer.Write(record); err != nil {
 					t.Errorf("Failed to write data to CSV for %s - %s: %s", src.Name, tpc, err)
 				}
-			}(source, topic)
+			}(source, topic, sourceMetric)
 		}
 	}
 	wg.Wait()
+
+	// Get the busiest source at a given time period
+	for _, sourceMetric := range sourceMetricsList {
+		fmt.Printf("Source: %s, Max Throughput: %.2f during %s \n",
+			sourceMetric.sourceName,
+			sourceMetric.busiestThroughput,
+			sourceMetric.busiestTimeWindowStartTime)
+	}
 
 	// Flushing and close writer "after all go routines are done " (imp)
 	if err := dataWriter.Close(); err != nil {
@@ -140,7 +153,7 @@ func CalculateDataSize(t *testing.T, ctx context.Context, dataWriter *DataWriter
 }
 
 // handles the subscription and updates size the data as its received.
-func subscribeAndMeasure(ctx context.Context, source Source, symbol string, timer *time.Timer, dc *DataCollector, timeFrameWindowSize int) (int64, *DataWindow) {
+func subscribeAndMeasure(ctx context.Context, source Source, symbol string, timer *time.Timer, dc *DataCollector, timeFrameWindowSize int, sourceMetrics *SourceMetric) (int64, *DataWindow) {
 	msgChan, err := Subscribe(ctx, source, symbol)
 	if err != nil {
 		log.Info("Error subscribing to source %s with symbol %s: %v", source.Name, symbol, err)
@@ -156,7 +169,7 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 	windowChange := make(chan string, 1)
 	oldWindowKey := ""
 
-	// Manage window timings
+	// Manage window changes
 	go func() {
 		for {
 			select {
@@ -182,14 +195,12 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 		select {
 		case msg := <-msgChan:
 
-			// TEMP : need to have an identifier for RPC calls,
-			// have hardcoded for now.
-			// fmt.Println("Msg from channel : ", string(msg))
 			if int64(len(msg)) == 0 || msg == nil {
 				continue
 			}
 
 			currentTime := time.Now()
+
 			// this rounds down the current time to the timeWindow
 			// if say window is 10 min, 21:16:57 is rounded to 21:10:00
 			// such that we can have a map of all elements between 21:10:00 till 21:20:00
@@ -219,6 +230,21 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 			dataSize += int64(len(msg))
 			messageCount += 1
 
+			// Aggregate source throughput per window
+			// --> Every roiutine (source + symbol) has global structure sourceMetrics
+			// they lock and change the throughputs as and when windows change
+			// --> This was, cross routine access is localized to that source's topics
+			// --> Easier to extract data as well later on.
+			sourceMetrics.mu.Lock()
+			currentThroughput := float64(window.DataSize) / float64(timeFrameWindowSize)
+			totalThroughput := sourceMetrics.sourceTotalThroughputPerWindow[windowKey]
+			sourceMetrics.sourceTotalThroughputPerWindow[windowKey] = totalThroughput + currentThroughput
+			if totalThroughput+currentThroughput > sourceMetrics.busiestThroughput {
+				sourceMetrics.busiestThroughput = totalThroughput + currentThroughput
+				sourceMetrics.busiestTimeWindowStartTime = windowKey
+			}
+			sourceMetrics.mu.Unlock()
+
 			// Debug
 			// if strings.Contains(source.Name, "coinbase") {
 			// 	fmt.Println("CB : ", string(msg), " Len : ", int64(len(msg)), messageCount)
@@ -232,13 +258,4 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 			return dataSize, globalWindow
 		}
 	}
-}
-
-func handleRPCData(data []byte) bloc.Block {
-	var block bloc.Block
-	if err := rlp.DecodeBytes(data, &block); err != nil {
-		log.Fatalf("RLP Decoding failed: %v", err)
-	}
-	// fmt.Println("block rpc hash data : ", block.Hash())
-	return block
 }
