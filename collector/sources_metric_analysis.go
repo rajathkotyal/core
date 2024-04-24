@@ -5,11 +5,11 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/openmesh-network/core/internal/config"
 	log "github.com/openmesh-network/core/internal/logger"
 )
 
@@ -95,6 +95,11 @@ func (dw *DataWriter) Close() error {
 // Handler to subscribe to each source and symbol & measure data size over a set period from current time.
 func CalculateDataSize(t *testing.T, ctx context.Context, dataWriter *DataWriter, timeToCollect int, timeFrameWindowSize int) {
 
+	config.Path = "../../core"
+	config.Name = "config"
+	config.ParseConfig(config.Path, true)
+	log.InitLogger()
+
 	// Busiest times of a given src for a given symbol --> To detect high trading volume for a given symbol.
 	// Fetch data in parts of a whole. 10 mins --> 1 min windows which contain size of
 	// msgs received during that period and also number of msgs. Can calculate the load w this. --> Throughput = size / window time frame.
@@ -124,7 +129,7 @@ func CalculateDataSize(t *testing.T, ctx context.Context, dataWriter *DataWriter
 				// subscribe and wait till the time period for each src/symbol.
 				size, busiestWindow := subscribeAndMeasure(ctx, src, tpc, time.NewTimer(time.Duration(timeToCollect)*time.Second), dc, timeFrameWindowSize, srcMetric)
 				throughput := size / int64(timeToCollect)
-				fmt.Printf("Data size  for %s - %s: %d bytes, with TP : %d \n", src.Name, tpc, size, throughput)
+				log.Infof("Data size  for %s - %s: %d bytes, with TP : %d \n", src.Name, tpc, size, throughput)
 				throughputStr := fmt.Sprintf("%.2f", busiestWindow.Throughput)
 
 				record := []string{src.Name, tpc, fmt.Sprintf("%d", size), fmt.Sprintf("%d", throughput), busiestWindow.StartTime, throughputStr, fmt.Sprintf("%d", busiestWindow.MessageCount)}
@@ -141,7 +146,7 @@ func CalculateDataSize(t *testing.T, ctx context.Context, dataWriter *DataWriter
 
 	// Get the busiest source at a given time period
 	for _, sourceMetric := range sourceMetricsList {
-		fmt.Printf("Source: %s, Max Throughput: %.2f during %s \n",
+		log.Infof("Source: %s, Max Throughput: %.2f during %s \n",
 			sourceMetric.sourceName,
 			sourceMetric.busiestThroughput,
 			sourceMetric.busiestTimeWindowStartTime)
@@ -157,7 +162,7 @@ func CalculateDataSize(t *testing.T, ctx context.Context, dataWriter *DataWriter
 func subscribeAndMeasure(ctx context.Context, source Source, symbol string, timer *time.Timer, dc *DataCollector, timeFrameWindowSize int, sourceMetrics *SourceMetric) (int64, *DataWindow) {
 	msgChan, err := Subscribe(ctx, source, symbol)
 	if err != nil {
-		log.Info("Error subscribing to source %s with symbol %s: %v", source.Name, symbol, err)
+		log.Infof("Error subscribing to source %s with symbol %s: %v", source.Name, symbol, err)
 		return 0, &DataWindow{}
 	}
 
@@ -183,7 +188,7 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 					if throughput > globalWindow.Throughput {
 						globalWindow = window
 					}
-					// fmt.Println("Window changed :", window, " current max throughput : ", globalWindow.Throughput)
+					log.Infoln("Window changed for ", window.SourceName, window.Symbol, " . Startime : ", window.StartTime, " Window Throughput :", throughput, " Current max throughput : ", globalWindow.Throughput, " Message count in window : ", window.MessageCount)
 				}
 			case <-ctx.Done():
 				close(windowChange)
@@ -220,7 +225,7 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 					Symbol:       symbol,
 					StartTime:    windowKey,
 					DataSize:     0,
-					MessageCount: 1,
+					MessageCount: 0,
 				}
 				dc.DataWindows[windowKey] = window
 			}
@@ -247,12 +252,12 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 			sourceMetrics.mu.Unlock()
 
 			// Debug
-			if strings.Contains(source.Name, "coinbase") {
-				fmt.Println("CB public ethusd : ", string(msg), " Len : ", int64(len(msg)), messageCount)
-			}
+			// if strings.Contains(source.Name, "coinbase") {
+			// 	fmt.Println("CB public ethusd : ", string(msg), " Len : ", int64(len(msg)), messageCount)
+			// }
 
 		case <-timerLocal.C:
-			fmt.Println("Received entire data for  : ", source.Name, symbol, ".  Now stopping metric collection, message ct : ", messageCount)
+			log.Infoln("Received entire data for  : ", source.Name, symbol, ".  Now stopping metric collection, message ct : ", messageCount)
 
 			return dataSize, globalWindow
 		case <-ctx.Done():
