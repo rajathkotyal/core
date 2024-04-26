@@ -25,8 +25,8 @@ import (
 var jsoniterator = jsoniter.ConfigCompatibleWithStandardLibrary
 
 // All sources compress test
-// var filePathAll string = "compressed_files/test_bson_AllSources.bson"
-// var fileAll, _ = os.OpenFile(filePathAll, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+var filePathAll string = "compressed_files/test_bson_AllSources.bson"
+var fileAll, _ = os.OpenFile(filePathAll, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 
 type DataWindow struct {
 	SourceName   string
@@ -177,19 +177,19 @@ func CalculateDataSize(t *testing.T, ctx context.Context, dataWriter *DataWriter
 			sourceMetric.busiestTimeWindowStartTime)
 	}
 
-	// fileAll.Close()
+	fileAll.Close()
 
-	// fmt.Println("Compressing All sources: ")
-	// CompressBSONFileZst("compressed_files/"+"test_bson_AllSources.bson", "compressed_files/"+"test_compressed_bson_AllSources.zst", 4094)
+	fmt.Println("Compressing All sources: ")
+	CompressBSONFileZst("compressed_files/"+"test_bson_AllSources.bson", "compressed_files/"+"test_compressed_bson_AllSources.zst", 4094)
 
-	// CompressBSONFileLZ4("compressed_files/"+"test_bson_AllSources.bson", "compressed_files/"+"test_compressed_bson_AllSources.lz4", 4094)
+	CompressBSONFileLZ4("compressed_files/"+"test_bson_AllSources.bson", "compressed_files/"+"test_compressed_bson_AllSources.lz4", 4094)
 
-	// fmt.Println("Decompressing All sources: ")
-	// err := DecompressAndReadBSONZst("compressed_files/test_compressed_bson_AllSources.zst")
-	// fmt.Println("decomp err ", err)
+	fmt.Println("Decompressing All sources: ")
+	err := DecompressAndReadBSONZst("compressed_files/test_compressed_bson_AllSources.zst")
+	fmt.Println("decomp err ", err)
 
-	// err1 := DecompressAndReadBSONLZ4("compressed_files/test_compressed_bson_AllSources.lz4")
-	// fmt.Println("decomp lz4 err ", err1)
+	err1 := DecompressAndReadBSONLZ4("compressed_files/test_compressed_bson_AllSources.lz4")
+	fmt.Println("decomp lz4 err ", err1)
 
 	// Flushing and close writer "after all go routines are done " (imp)
 	if err := dataWriter.Close(); err != nil {
@@ -333,9 +333,14 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 
 						fmt.Println("total size exceeded ],", currentBufferSize, currentBufferSize+totalLength, bufferSize, paddingLength)
 
-						_, err = bsonFile.Write(buffer)
+						_, err = bsonFile.Write(buffer[:currentBufferSize])
 						if err != nil {
 							log.Fatalf(source.Name, " Failed to write to bson file: %v", err)
+						}
+
+						_, err = fileAll.Write(buffer[:currentBufferSize])
+						if err != nil {
+							log.Fatalf(source.Name, " Failed to write to All src file: %v", err)
 						}
 
 						_, err := zstEncoder.Write(buffer[:currentBufferSize])
