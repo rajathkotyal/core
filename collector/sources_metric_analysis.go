@@ -8,23 +8,23 @@ import (
 	jsoniter "github.com/json-iterator/go"
 
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/buger/jsonparser"
-	"github.com/klauspost/compress/zstd"
 	"github.com/openmesh-network/core/internal/config"
 	log "github.com/openmesh-network/core/internal/logger"
-	"github.com/pierrec/lz4"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
 // using this for now since we are unmarshaling every value
 var jsoniterator = jsoniter.ConfigCompatibleWithStandardLibrary
+
+// All sources compress test
+var filePathAll string = "compressed_files/test_bson_AllSources.bson"
+var fileAll, _ = os.OpenFile(filePathAll, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
 
 type DataWindow struct {
 	SourceName   string
@@ -141,26 +141,23 @@ func CalculateDataSize(t *testing.T, ctx context.Context, dataWriter *DataWriter
 				defer wg.Done()
 
 				// subscribe and wait till the time period for each src/symbol.
-				size, busiestWindow, _ := subscribeAndMeasure(ctx, src, tpc, time.NewTimer(time.Duration(timeToCollect)*time.Second), dc, timeFrameWindowSize, srcMetric)
+				size, busiestWindow, filePathSource := subscribeAndMeasure(ctx, src, tpc, time.NewTimer(time.Duration(timeToCollect)*time.Second), dc, timeFrameWindowSize, srcMetric)
 				throughput := size / int64(timeToCollect)
 				// log.Infof("Data size  for %s - %s: %d bytes, with TP : %d \n", src.Name, tpc, size, throughput)
 				throughputStr := fmt.Sprintf("%.2f", busiestWindow.Throughput)
 
-				// Compression benchmark
-				if strings.Contains(src.Name, "coinbase") {
+				fmt.Println("Compressing  source : ", src.Name)
 
-					fmt.Println("Compressing : ")
-					compressBSONFile("compressed_files/"+"test_bson_coinbase.bson", "compressed_files/"+"test_compressed_bson_coinbase.zst", 4094)
+				CompressBSONFileZst(filePathSource+".bson", filePathSource+".zst", 4094)
 
-					compressBSONFileLZ4("compressed_files/"+"test_bson_coinbase.bson", "compressed_files/"+"test_compressed_bson_coinbase.lz4", 4094)
+				CompressBSONFileLZ4(filePathSource+".bson", filePathSource+".lz4", 4094)
 
-					fmt.Println("Decompressing : ")
-					err := decompressAndReadBSON("compressed_files/test_compressed_bson_coinbase.zst")
-					fmt.Println("decomp err ", err)
+				fmt.Println("Decompressing source: ", src.Name)
+				err := DecompressAndReadBSONZst(filePathSource + ".zst")
+				fmt.Println("decomp err ", err)
 
-					err1 := decompressAndReadBSONLZ4("compressed_files/test_compressed_bson_coinbase.lz4")
-					fmt.Println("decomp lz4 err ", err1)
-				}
+				err1 := DecompressAndReadBSONLZ4(filePathSource + ".lz4")
+				fmt.Println("decomp lz4 err ", err1)
 
 				record := []string{src.Name, tpc, fmt.Sprintf("%d", size), fmt.Sprintf("%d", throughput), busiestWindow.StartTime, throughputStr, fmt.Sprintf("%d", busiestWindow.MessageCount)}
 
@@ -181,6 +178,20 @@ func CalculateDataSize(t *testing.T, ctx context.Context, dataWriter *DataWriter
 			sourceMetric.busiestThroughput,
 			sourceMetric.busiestTimeWindowStartTime)
 	}
+
+	fileAll.Close()
+
+	fmt.Println("Compressing All sources: ")
+	CompressBSONFileZst("compressed_files/"+"test_bson_AllSources.bson", "compressed_files/"+"test_compressed_bson_AllSources.zst", 4094)
+
+	CompressBSONFileLZ4("compressed_files/"+"test_bson_AllSources.bson", "compressed_files/"+"test_compressed_bson_AllSources.lz4", 4094)
+
+	fmt.Println("Decompressing All sources: ")
+	err := DecompressAndReadBSONZst("compressed_files/test_compressed_bson_AllSources.zst")
+	fmt.Println("decomp err ", err)
+
+	err1 := DecompressAndReadBSONLZ4("compressed_files/test_compressed_bson_AllSources.lz4")
+	fmt.Println("decomp lz4 err ", err1)
 
 	// Flushing and close writer "after all go routines are done " (imp)
 	if err := dataWriter.Close(); err != nil {
@@ -206,16 +217,21 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 	oldWindowKey := ""
 
 	var file *os.File
-	var filePath string
-	if strings.Contains(source.Name, "coinbase") {
-		filePath := fmt.Sprintf("test_bson_%s", sourceMetrics.sourceName+".bson")
 
-		// Append, Create if not exists, Write only mode.
-		file, err = os.OpenFile("compressed_files/"+filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-		if err != nil {
-			log.Fatalf("Failed to open file: %v", err)
-			panic(err)
-		}
+	dirPath := fmt.Sprintf("compressed_files/%s", sourceMetrics.sourceName)
+
+	if err := os.MkdirAll(dirPath, 0755); err != nil {
+		log.Fatalf("Failed to create directory: %v", err)
+		panic(err)
+	}
+
+	filePathSource := fmt.Sprintf("%s/test_%s_%s", dirPath, sourceMetrics.sourceName, symbol)
+
+	// Individual source level compression.
+	file, err = os.OpenFile(filePathSource+".bson", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		log.Fatalf("Failed to open file: %v", err)
+		panic(err)
 	}
 
 	// Manage window changes
@@ -250,17 +266,23 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 
 			var bsonData []byte
 
-			if !strings.Contains(source.Name, "rpc") && !strings.Contains(source.Name, "binance") && !strings.Contains(source.Name, "rpc") {
+			// TODO : store Rpc messages
+			if !strings.Contains(source.Name, "rpc") {
 
-				var coinbase interface{}
+				// var coinbase interface{}
 
-				// using encoding json as of now
-				if err := jsoniterator.Unmarshal(msg, &coinbase); err != nil {
-					log.Fatalf("Failed to unmarshal JSON: %v", err)
-					continue
+				// using jsoniter as of now since we are unmarshaling every key value.
+				// if err := jsoniterator.Unmarshal(msg, &coinbase); err != nil {
+				// 	log.Fatalf("Failed to unmarshal JSON: %v", err)
+				// 	continue
+				// }
+
+				jsonData, err := JsonUnmarshaler(msg)
+				if err != nil {
+					panic(err)
 				}
 
-				bsonData, err = bson.Marshal(coinbase) // of type []byte
+				bsonData, err = bson.Marshal(jsonData) // of type []byte
 				if err != nil {
 					log.Fatalf("Failed to marshal to BSON: %v", err)
 					continue
@@ -282,6 +304,12 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 				copy(buffer[4:], bsonData)
 
 				_, err = file.Write(buffer)
+				if err != nil {
+					log.Fatalf(source.Name, " Failed to write to file: %v", err)
+				}
+
+				// All sources
+				_, err = fileAll.Write(buffer)
 				if err != nil {
 					log.Fatalf(source.Name, " Failed to write to file: %v", err)
 				}
@@ -340,239 +368,11 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 			// log.Infoln("Received entire data for  : ", source.Name, symbol, ".  Now stopping metric collection, message ct : ", messageCount)
 
 			file.Close()
-			fmt.Println("Closed file ", filePath)
+			fmt.Println("Closed file ", filePathSource)
 			time.Sleep(3 * time.Second)
-			return dataSize, globalWindow, filePath
+			return dataSize, globalWindow, filePathSource
 		case <-ctx.Done():
-			return dataSize, globalWindow, filePath
+			return dataSize, globalWindow, filePathSource
 		}
 	}
-}
-
-// If using json parser, use this func to dettermine datatypes etc.
-func handleKeyValueType(key, value []byte, dataType jsonparser.ValueType, offset int) error {
-	fmt.Printf("Key: %s, Value: %s, Type: %v\n", string(key), string(value), dataType)
-	return nil
-}
-
-func compressBSONFileOld(sourceFilePath, destFilePath string) error {
-
-	sourceFile, err := os.Open(sourceFilePath)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	destFile, err := os.OpenFile(destFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-	if err != nil {
-		log.Fatalf("Failed to open file: %v", err)
-		panic(err)
-	}
-	defer destFile.Close()
-
-	// default compression level
-	encoder, err := zstd.NewWriter(destFile)
-	if err != nil {
-		return err
-	}
-	defer encoder.Close()
-
-	_, err = io.Copy(encoder, sourceFile)
-	return err
-}
-
-func decompressAndReadBSON(destFilePath string) error {
-
-	compressedFile, err := os.Open(destFilePath)
-	if err != nil {
-		return fmt.Errorf("failed to open compressed file: %v", err)
-	}
-	defer compressedFile.Close()
-
-	decoder, err := zstd.NewReader(compressedFile)
-	if err != nil {
-		return fmt.Errorf("failed to create zstd reader: %v", err)
-	}
-	defer decoder.Close()
-
-	// length prefix buffer, to read only length and skip to the next doc
-	bsonBuffer := make([]byte, 4)
-	msgCount := 0
-
-	for {
-		// Reads length of the next BSON document
-		if _, err := io.ReadFull(decoder, bsonBuffer); err != nil {
-			if err == io.EOF {
-				fmt.Println("Reached end of file")
-				break
-			}
-			return fmt.Errorf("failed to read BSON length: %v", err)
-		}
-
-		length := int(binary.BigEndian.Uint32(bsonBuffer))
-		if length <= 0 {
-			return fmt.Errorf("invalid BSON document length: %d", length)
-		}
-
-		bsonData := make([]byte, length)
-		// Read actual BSON data
-		if _, err := io.ReadFull(decoder, bsonData); err != nil {
-			return fmt.Errorf("failed to read BSON data: %v", err)
-		}
-
-		var msg map[string]interface{}
-
-		// Unmarshal BSON to generic interface
-		if err := bson.Unmarshal(bsonData, &msg); err != nil {
-			return fmt.Errorf("failed to unmarshal BSON: %v", err)
-		}
-
-		_, err := jsoniterator.MarshalIndent(msg, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal JSON: %v", err)
-		}
-
-		msgCount++
-		fmt.Println("Decompressed JSON count :", msg, msgCount)
-	}
-
-	return nil
-}
-
-func compressBSONFileLZ4Old(sourceFilePath, destFilePath string) error {
-
-	sourceFile, err := os.Open(sourceFilePath)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	destFile, err := os.OpenFile(destFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
-	if err != nil {
-		log.Fatalf("Failed to open file: %v", err)
-		panic(err)
-	}
-	defer destFile.Close()
-
-	encoder := lz4.NewWriter(destFile)
-	defer encoder.Close()
-
-	_, err = io.Copy(encoder, sourceFile)
-	return err
-}
-
-func decompressAndReadBSONLZ4(sourceFilePath string) error {
-
-	compressedFile, err := os.Open(sourceFilePath)
-	if err != nil {
-		return fmt.Errorf("failed to open compressed file: %v", err)
-	}
-	defer compressedFile.Close()
-
-	decoder := lz4.NewReader(compressedFile)
-
-	bsonBuffer := make([]byte, 4)
-	msgCount := 0
-
-	for {
-		if _, err := io.ReadFull(decoder, bsonBuffer); err != nil {
-			if err == io.EOF {
-				fmt.Println("Reached end of file")
-				break
-			}
-			return fmt.Errorf("failed to read BSON length: %v", err)
-		}
-
-		length := int(binary.BigEndian.Uint32(bsonBuffer))
-		if length <= 0 {
-			return fmt.Errorf("invalid BSON document length: %d", length)
-		}
-
-		bsonData := make([]byte, length)
-		if _, err := io.ReadFull(decoder, bsonData); err != nil {
-			return fmt.Errorf("failed to read BSON data: %v", err)
-		}
-
-		var msg map[string]interface{}
-		if err := bson.Unmarshal(bsonData, &msg); err != nil {
-			return fmt.Errorf("failed to unmarshal BSON: %v", err)
-		}
-
-		msgCount++
-		fmt.Println("Lz4 Decompressed BSON document count:", msg, msgCount)
-
-	}
-
-	return nil
-}
-
-func compressBSONFile(sourceFilePath, destFilePath string, chunkSize int) error {
-	sourceFile, err := os.Open(sourceFilePath)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	destFile, err := os.Create(destFilePath)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-
-	encoder, err := zstd.NewWriter(destFile)
-	if err != nil {
-		return err
-	}
-	defer encoder.Close()
-
-	buf := make([]byte, chunkSize)
-	for {
-		n, err := sourceFile.Read(buf)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return err
-		}
-		if n > 0 {
-			if _, err := encoder.Write(buf[:n]); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func compressBSONFileLZ4(sourceFilePath, destFilePath string, chunkSize int) error {
-	sourceFile, err := os.Open(sourceFilePath)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	destFile, err := os.Create(destFilePath)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-
-	encoder := lz4.NewWriter(destFile)
-	defer encoder.Close()
-
-	buf := make([]byte, chunkSize)
-	for {
-		n, err := sourceFile.Read(buf)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return err
-		}
-		if n > 0 {
-			if _, err := encoder.Write(buf[:n]); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
