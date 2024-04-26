@@ -6,6 +6,8 @@ import (
 	"encoding/csv"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/klauspost/compress/zstd"
+	"github.com/pierrec/lz4"
 
 	"fmt"
 	"os"
@@ -141,23 +143,19 @@ func CalculateDataSize(t *testing.T, ctx context.Context, dataWriter *DataWriter
 				defer wg.Done()
 
 				// subscribe and wait till the time period for each src/symbol.
-				size, busiestWindow, filePathSource := subscribeAndMeasure(ctx, src, tpc, time.NewTimer(time.Duration(timeToCollect)*time.Second), dc, timeFrameWindowSize, srcMetric)
+				size, busiestWindow, _ := subscribeAndMeasure(ctx, src, tpc, time.NewTimer(time.Duration(timeToCollect)*time.Second), dc, timeFrameWindowSize, srcMetric)
 				throughput := size / int64(timeToCollect)
 				// log.Infof("Data size  for %s - %s: %d bytes, with TP : %d \n", src.Name, tpc, size, throughput)
 				throughputStr := fmt.Sprintf("%.2f", busiestWindow.Throughput)
 
-				fmt.Println("Compressing  source : ", src.Name)
+				// fmt.Println("Compressing  source : ", src.Name)
 
-				CompressBSONFileZst(filePathSource+".bson", filePathSource+".zst", 4094)
+				// CompressBSONFileZst(filePathSource+".bson", filePathSource+".zst", 4094)
 
-				CompressBSONFileLZ4(filePathSource+".bson", filePathSource+".lz4", 4094)
+				// CompressBSONFileLZ4(filePathSource+".bson", filePathSource+".lz4", 4094)
 
-				fmt.Println("Decompressing source: ", src.Name)
-				err := DecompressAndReadBSONZst(filePathSource + ".zst")
-				fmt.Println("decomp err ", err)
-
-				err1 := DecompressAndReadBSONLZ4(filePathSource + ".lz4")
-				fmt.Println("decomp lz4 err ", err1)
+				// err1 := DecompressAndReadBSONLZ4(filePathSource + ".lz4")
+				// fmt.Println("decomp lz4 err ", err1)
 
 				record := []string{src.Name, tpc, fmt.Sprintf("%d", size), fmt.Sprintf("%d", throughput), busiestWindow.StartTime, throughputStr, fmt.Sprintf("%d", busiestWindow.MessageCount)}
 
@@ -216,8 +214,6 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 	windowChange := make(chan string, 1)
 	oldWindowKey := ""
 
-	var file *os.File
-
 	dirPath := fmt.Sprintf("compressed_files/%s", sourceMetrics.sourceName)
 
 	if err := os.MkdirAll(dirPath, 0755); err != nil {
@@ -228,11 +224,25 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 	filePathSource := fmt.Sprintf("%s/test_%s_%s", dirPath, sourceMetrics.sourceName, symbol)
 
 	// Individual source level compression.
-	file, err = os.OpenFile(filePathSource+".bson", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	zstFile, zstEncoder, err := SetupZstCompressionFile(filePathSource + ".zst")
 	if err != nil {
-		log.Fatalf("Failed to open file: %v", err)
-		panic(err)
+		fmt.Print("error setup compres")
 	}
+
+	lz4File, lz4Encoder, err := SetupLz4CompressionFile(filePathSource + ".lz4")
+	if err != nil {
+		fmt.Print("error setup compres")
+	}
+
+	currentBufferSize := 0
+
+	var bufferSize = 8192
+
+	if source.Name == "dydx" {
+		bufferSize = 16384
+	}
+
+	buffer := make([]byte, bufferSize)
 
 	// Manage window changes
 	go func() {
@@ -256,6 +266,8 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 		}
 	}()
 
+	// msgCount := 0
+
 	for {
 		select {
 		case msg := <-msgChan:
@@ -269,50 +281,88 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 			// TODO : store Rpc messages
 			if !strings.Contains(source.Name, "rpc") {
 
-				// var coinbase interface{}
+				var jsonData interface{}
+
+				// fmt.Println("msgcounnt origin , ", msgCount)
+				// msgCount++
 
 				// using jsoniter as of now since we are unmarshaling every key value.
-				// if err := jsoniterator.Unmarshal(msg, &coinbase); err != nil {
-				// 	log.Fatalf("Failed to unmarshal JSON: %v", err)
-				// 	continue
-				// }
-
-				jsonData, err := JsonUnmarshaler(msg)
-				if err != nil {
-					panic(err)
+				if err := jsoniterator.Unmarshal(msg, &jsonData); err != nil {
+					log.Fatalf("Failed to unmarshal JSON: %v", err)
+					continue
 				}
 
-				bsonData, err = bson.Marshal(jsonData) // of type []byte
+				// fmt.Println("Msg", string(msg))
+				// fmt.Println("Json", jsonData)
+
+				// jsonparser library
+				// jsonData, err := JsonUnmarshaler(msg)
+				// if err != nil {
+				// 	panic(err)
+				// }
+
+				bsonData, err = bson.Marshal(jsonData)
 				if err != nil {
 					log.Fatalf("Failed to marshal to BSON: %v", err)
 					continue
 				}
 
 				bsonLength := len(bsonData)
+				totalLength := 4 + len(bsonData)
+
+				if currentBufferSize+totalLength > bufferSize {
+
+					// Buffer needs to be written and cleared because it won't fit
+					if currentBufferSize > 0 {
+						// pad, Compress and write the current buffer content to the file
+						fmt.Println("buf size old :", len(buffer[:currentBufferSize]))
+						paddingLength := bufferSize - currentBufferSize
+
+						if paddingLength > 0 {
+
+							for i := 0; i < paddingLength; i++ {
+								buffer[currentBufferSize+i] = 0
+							}
+						}
+
+						fmt.Println("total size exceeded ],", currentBufferSize, currentBufferSize+totalLength, bufferSize, paddingLength)
+
+						_, err := zstEncoder.Write(buffer[:currentBufferSize])
+						if err != nil {
+							fmt.Println("Error writing")
+						}
+						fmt.Println("buf size :", len(buffer))
+
+						_, err1 := lz4Encoder.Write(buffer[:currentBufferSize])
+						if err1 != nil {
+							fmt.Println("Error writing")
+						}
+
+						if err := zstEncoder.Flush(); err != nil {
+							fmt.Println("Error flushing")
+						}
+
+						if err := lz4Encoder.Flush(); err != nil {
+							fmt.Println("Error flushing")
+						}
+						fmt.Println("buf size new :", len(buffer))
+						currentBufferSize = 0
+					}
+
+				}
 
 				// fmt.Println("BSON data : ", source.Name, bsonData, " length : ", bsonLength)
-
-				// this buffer that will hold length and data
-				buffer := make([]byte, 4+bsonLength)
 
 				// Write length of the BSON data to buffer (big-endian format)
 				// for larger data --> use :
 				// binary.BigEndian.PutUint64(buffer[0:4], uint64(bsonLength))
-				binary.BigEndian.PutUint32(buffer[0:4], uint32(bsonLength))
+				binary.BigEndian.PutUint32(buffer[currentBufferSize:], uint32(bsonLength))
+				currentBufferSize += 4
 
-				// Copies BSON data to buffer
-				copy(buffer[4:], bsonData)
+				// Copies BSON data to the buffer right after the length
+				copy(buffer[currentBufferSize:], bsonData)
+				currentBufferSize += bsonLength
 
-				_, err = file.Write(buffer)
-				if err != nil {
-					log.Fatalf(source.Name, " Failed to write to file: %v", err)
-				}
-
-				// All sources
-				_, err = fileAll.Write(buffer)
-				if err != nil {
-					log.Fatalf(source.Name, " Failed to write to file: %v", err)
-				}
 			}
 
 			currentTime := time.Now()
@@ -367,12 +417,53 @@ func subscribeAndMeasure(ctx context.Context, source Source, symbol string, time
 		case <-timerLocal.C:
 			// log.Infoln("Received entire data for  : ", source.Name, symbol, ".  Now stopping metric collection, message ct : ", messageCount)
 
-			file.Close()
-			fmt.Println("Closed file ", filePathSource)
+			closeCompression(zstEncoder, zstFile)
+			closeCompressionLz4(lz4Encoder, lz4File)
+			fmt.Println("Closed file & encoder ", filePathSource)
 			time.Sleep(3 * time.Second)
+
+			fmt.Println("Zst Decompressing source: ", sourceMetrics.sourceName)
+			err := DecompressAndReadBSONZst(filePathSource + ".lz4")
+			fmt.Println("decomp err ", err)
+
+			fmt.Println("Lz4 Decompressing source: ", sourceMetrics.sourceName)
+			err1 := DecompressAndReadBSONLZ4(filePathSource + ".lz4")
+			fmt.Println("decomp err ", err1)
+
 			return dataSize, globalWindow, filePathSource
 		case <-ctx.Done():
 			return dataSize, globalWindow, filePathSource
 		}
 	}
+}
+
+// Function to cleanly close the compression and file
+func closeCompression(encoder *zstd.Encoder, file *os.File) error {
+	if encoder != nil {
+		if err := encoder.Close(); err != nil {
+			file.Close()
+			return err
+		}
+	}
+
+	if file != nil {
+		return file.Close()
+	}
+
+	return nil
+}
+
+func closeCompressionLz4(encoder *lz4.Writer, file *os.File) error {
+	if encoder != nil {
+		if err := encoder.Close(); err != nil {
+			file.Close()
+			return err
+		}
+	}
+
+	if file != nil {
+		return file.Close()
+	}
+
+	return nil
 }
